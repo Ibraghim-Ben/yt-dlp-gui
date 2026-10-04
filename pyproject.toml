@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yt-dlp-gui"
+version = "0.1.0"
+description = "A graphical interface for yt-dlp"
+requires-python = ">=3.11"
+dependencies = [
+    "PyQt6>=6.7",
+    "yt-dlp>=2024.1.1",
+    "platformdirs>=4.0",
+    "curl-cffi>=0.5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-qt", "ruff", "mypy", "pyinstaller"]
+
+[project.scripts]
+yt-dlp-gui = "src.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-data]
+"src" = ["resources/themes/*.qss", "resources/app_icon.ico", "resources/app_icon.png"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
