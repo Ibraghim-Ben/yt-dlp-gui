@@ -1,4 +1,6 @@
-﻿# yt-dlp-gui
+# yt-dlp-gui
+
+[![Downloads](https://img.shields.io/github/downloads/Ibraghim-Ben/yt-dlp-gui/total?color=blue)](https://github.com/Ibraghim-Ben/yt-dlp-gui/releases)
 
 A graphical interface for yt-dlp — download videos from YouTube and 1000+ other sites.
 
