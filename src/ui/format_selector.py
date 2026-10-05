@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Optional
+import urllib.request
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableView, QAbstractItemView,
     QLabel, QRadioButton, QButtonGroup, QComboBox, QPushButton,
@@ -7,13 +8,77 @@ from PyQt6.QtWidgets import (
     QCheckBox,
 )
 from PyQt6.QtCore import (
-    Qt, pyqtSignal, QAbstractTableModel, QModelIndex, QSortFilterProxyModel, QAbstractItemModel
+    Qt, pyqtSignal, QAbstractTableModel, QModelIndex, QSortFilterProxyModel,
+    QAbstractItemModel, QThread, QObject,
 )
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QPixmap, QPainter, QPainterPath
 from ..core.models import VideoInfo, FormatInfo, MediaType
 from ..core.container_rules import resolve_container
 from ..utils.theme import get_theme_color, get_theme_color_hex
 from ..utils.formatters import format_filesize
+
+
+class _ThumbLoader(QObject):
+    finished = pyqtSignal(bytes)
+    failed = pyqtSignal()
+
+    def __init__(self, url: str) -> None:
+        super().__init__()
+        self._url = url
+
+    def run(self) -> None:
+        try:
+            req = urllib.request.Request(self._url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = resp.read()
+            self.finished.emit(data)
+        except Exception:
+            self.failed.emit()
+
+
+class ThumbnailLabel(QLabel):
+    _RADIUS = 6
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._pixmap: Optional[QPixmap] = None
+        self.setFixedSize(112, 63)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    def set_pixmap(self, px: QPixmap) -> None:
+        self._pixmap = px
+        self.update()
+
+    def clear_pixmap(self) -> None:
+        self._pixmap = None
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, self.width(), self.height(), self._RADIUS, self._RADIUS)
+        painter.setClipPath(path)
+
+        if self._pixmap and not self._pixmap.isNull():
+            scaled = self._pixmap.scaled(
+                self.size(),
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            x = (self.width() - scaled.width()) // 2
+            y = (self.height() - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
+        else:
+            is_dark = self.palette().window().color().lightness() < 128
+            bg = QColor(40, 44, 52) if is_dark else QColor(220, 225, 232)
+            painter.fillRect(0, 0, self.width(), self.height(), bg)
+            icon_color = QColor(90, 100, 115) if is_dark else QColor(150, 160, 175)
+            painter.setPen(icon_color)
+            font = painter.font()
+            font.setPointSize(18)
+            painter.setFont(font)
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "🎬")
 
 
 def get_best_audio(formats: list[FormatInfo]) -> Optional[FormatInfo]:
@@ -218,6 +283,8 @@ class FormatSelector(QWidget):
         self._model: Optional[FormatTableModel] = None
         self._proxy = FormatFilterProxy(self)
         self._proxy.setSortRole(Qt.ItemDataRole.EditRole)
+        self._thumb_thread: Optional[QThread] = None
+        self._thumb_loader: Optional[_ThumbLoader] = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -225,12 +292,23 @@ class FormatSelector(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
+        info_row = QHBoxLayout()
+        info_row.setSpacing(10)
+        info_row.setContentsMargins(0, 0, 0, 0)
+
+        self._thumb_label = ThumbnailLabel()
+        self._thumb_label.setObjectName("thumbLabel")
+        self._thumb_label.setVisible(False)
+        info_row.addWidget(self._thumb_label)
+
         self._info_label = QLabel("No video loaded")
         self._info_label.setObjectName("infoLabel")
         self._info_label.setWordWrap(True)
         self._info_label.setMinimumHeight(24)
         self._info_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        root.addWidget(self._info_label)
+        info_row.addWidget(self._info_label, 1)
+
+        root.addLayout(info_row)
 
         self._table = QTableView()
         self._table.setObjectName("formatTable")
@@ -323,6 +401,33 @@ class FormatSelector(QWidget):
         self._download_btn.clicked.connect(self._on_download)
         root.addWidget(self._download_btn)
 
+    def _load_thumbnail(self, url: str) -> None:
+        if self._thumb_thread and self._thumb_thread.isRunning():
+            self._thumb_thread.quit()
+            self._thumb_thread.wait(200)
+
+        self._thumb_label.clear_pixmap()
+        self._thumb_label.setVisible(False)
+
+        thread = QThread(self)
+        loader = _ThumbLoader(url)
+        loader.moveToThread(thread)
+        thread.started.connect(loader.run)
+        loader.finished.connect(self._on_thumb_loaded)
+        loader.failed.connect(thread.quit)
+        loader.finished.connect(thread.quit)
+        thread.finished.connect(loader.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._thumb_thread = thread
+        self._thumb_loader = loader
+        thread.start()
+
+    def _on_thumb_loaded(self, data: bytes) -> None:
+        px = QPixmap()
+        if px.loadFromData(data) and not px.isNull():
+            self._thumb_label.set_pixmap(px)
+            self._thumb_label.setVisible(True)
+
     def load_video(self, video_info: VideoInfo, output_dir: str) -> None:
         self._video_info = video_info
         self._folder_edit.setText(output_dir)
@@ -334,6 +439,12 @@ class FormatSelector(QWidget):
             f"<b>{video_info.title}</b><br>"
             f"<span style='color:{subtitle_color}'>{ch}  •  {dur}</span>"
         )
+
+        if video_info.thumbnail:
+            self._load_thumbnail(video_info.thumbnail)
+        else:
+            self._thumb_label.clear_pixmap()
+            self._thumb_label.setVisible(True)
 
         if self._model is not None:
             self._model.deleteLater()
@@ -381,6 +492,11 @@ class FormatSelector(QWidget):
         if self._model is not None:
             self._model.deleteLater()
             self._model = None
+        if self._thumb_thread and self._thumb_thread.isRunning():
+            self._thumb_thread.quit()
+            self._thumb_thread.wait(200)
+        self._thumb_label.clear_pixmap()
+        self._thumb_label.setVisible(False)
         self._info_label.setText("No video loaded")
         self._download_btn.setEnabled(False)
         self._subs_lang_cb.clear()

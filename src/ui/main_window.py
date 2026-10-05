@@ -6,7 +6,9 @@ from PyQt6.QtWidgets import (
     QStatusBar, QToolBar, QMessageBox, QFrame, QLabel, QDialog, QPushButton,
 )
 from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent, QObject
-from PyQt6.QtGui import QAction, QDragEnterEvent, QDropEvent
+from PyQt6.QtGui import (
+    QAction, QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent, QResizeEvent, QCursor,
+)
 
 from ..utils.config import Config
 from ..core.queue_manager import QueueManager
@@ -15,12 +17,13 @@ from ..core.models import VideoInfo, FormatInfo, PlaylistEntry
 from ..core.container_rules import resolve_container
 from ..core.ffmpeg_utils import find_ffmpeg
 
-from .url_bar import UrlBar
+from .url_bar import UrlBar, _normalize_url
 from .format_selector import FormatSelector
 from .download_queue import DownloadQueue
 from .log_panel import LogPanel
 from .settings_dialog import SettingsDialog
 from .playlist_dialog import PlaylistDialog
+from .drop_overlay import DropOverlay
 
 
 class NoTooltipFilter(QObject):
@@ -41,6 +44,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("yt-dlp GUI")
         self.setMinimumSize(960, 640)
         self.setAcceptDrops(True)
+        self.installEventFilter(self)
+
+        self._drop_overlay = DropOverlay(self)
 
         self._build_toolbar()
         self._build_central()
@@ -126,6 +132,10 @@ class MainWindow(QMainWindow):
         self._vert_splitter.setSizes([480, 150])
 
         root.addWidget(self._vert_splitter, 1)
+
+        for w in (central, left_widget, self._format_selector, self._dl_queue, self._log_panel, self._main_splitter, self._vert_splitter):
+            w.setAcceptDrops(True)
+            w.installEventFilter(self)
 
     def _build_statusbar(self) -> None:
         self._status = QStatusBar(self)
@@ -281,19 +291,117 @@ class MainWindow(QMainWindow):
             "Built with Python + PyQt6.",
         )
 
+    def _has_valid_drag_data(self, mime_data) -> bool:
+        if not mime_data:
+            return False
+        if mime_data.hasUrls():
+            for u in mime_data.urls():
+                s = u.toString().strip().lower()
+                if s.startswith(("http://", "https://")):
+                    return True
+        if mime_data.hasText():
+            t = mime_data.text().strip().lower()
+            if any(p in t for p in ("http://", "https://", "www.", "youtu.be", "youtube.com")):
+                return True
+        return False
+
+    def _extract_url_from_mime(self, mime_data) -> str:
+        if not mime_data:
+            return ""
+        if mime_data.hasUrls():
+            for u in mime_data.urls():
+                s = u.toString().strip()
+                if s.startswith(("http://", "https://")):
+                    return s
+        if mime_data.hasText():
+            text = mime_data.text().strip()
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith(("http://", "https://", "www.")):
+                    return line
+            if " " in text:
+                for token in text.split():
+                    if token.startswith(("http://", "https://")):
+                        return token
+            return text
+        return ""
+
+    def _show_drop_overlay(self) -> None:
+        if hasattr(self, "_drop_overlay") and self._drop_overlay:
+            self._drop_overlay.setGeometry(self.rect())
+            self._drop_overlay.show()
+            self._drop_overlay.raise_()
+
+    def _hide_drop_overlay(self) -> None:
+        if hasattr(self, "_drop_overlay") and self._drop_overlay:
+            self._drop_overlay.hide()
+
+    def _hide_drop_overlay_if_outside(self) -> None:
+        pos = self.mapFromGlobal(QCursor.pos())
+        if not self.rect().contains(pos):
+            self._hide_drop_overlay()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "_drop_overlay") and self._drop_overlay:
+            self._drop_overlay.setGeometry(self.rect())
+
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if event.mimeData().hasText() or event.mimeData().hasUrls():
+        if self._has_valid_drag_data(event.mimeData()):
             event.acceptProposedAction()
+            self._show_drop_overlay()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        if self._has_valid_drag_data(event.mimeData()):
+            event.acceptProposedAction()
+            if not self._drop_overlay.isVisible():
+                self._show_drop_overlay()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
+        self._hide_drop_overlay_if_outside()
+        event.accept()
 
     def dropEvent(self, event: QDropEvent) -> None:
-        text = ""
-        if event.mimeData().hasUrls():
-            text = event.mimeData().urls()[0].toString()
-        elif event.mimeData().hasText():
-            text = event.mimeData().text().strip()
-        if text.startswith("http"):
-            self._url_bar.set_url(text)
-            self._on_analyze(text)
+        self._hide_drop_overlay()
+        url = self._extract_url_from_mime(event.mimeData())
+        if url:
+            event.acceptProposedAction()
+            normalized = _normalize_url(url) or url
+            self._url_bar.set_url(normalized)
+            self._on_analyze(normalized)
+        else:
+            event.ignore()
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        etype = event.type()
+        if etype == QEvent.Type.DragEnter:
+            if isinstance(event, QDragEnterEvent) and self._has_valid_drag_data(event.mimeData()):
+                event.acceptProposedAction()
+                self._show_drop_overlay()
+                return True
+        elif etype == QEvent.Type.DragMove:
+            if isinstance(event, QDragMoveEvent) and self._has_valid_drag_data(event.mimeData()):
+                event.acceptProposedAction()
+                if not self._drop_overlay.isVisible():
+                    self._show_drop_overlay()
+                return True
+        elif etype == QEvent.Type.DragLeave:
+            self._hide_drop_overlay_if_outside()
+        elif etype == QEvent.Type.Drop:
+            if isinstance(event, QDropEvent):
+                self._hide_drop_overlay()
+                url = self._extract_url_from_mime(event.mimeData())
+                if url:
+                    event.acceptProposedAction()
+                    normalized = _normalize_url(url) or url
+                    self._url_bar.set_url(normalized)
+                    self._on_analyze(normalized)
+                    return True
+        return super().eventFilter(obj, event)
 
     def closeEvent(self, event) -> None:
         if self._queue.has_active_tasks():
