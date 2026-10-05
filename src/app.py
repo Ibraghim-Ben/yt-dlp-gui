@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import traceback
 import ctypes
@@ -9,7 +9,7 @@ from PyQt6.QtGui import QFont, QIcon
 from .utils.config import Config
 from .utils.theme import load_theme
 from .core.queue_manager import QueueManager
-from .core.ffmpeg_utils import find_ffmpeg
+from .core.ffmpeg_utils import find_ffmpeg, setup_bundled_binaries
 from .ui.main_window import MainWindow
 
 
@@ -44,6 +44,7 @@ def _get_icon_path() -> str:
 
 def run() -> int:
     sys.excepthook = global_exception_handler
+    setup_bundled_binaries()
     
     if os.name == "nt":
         try:

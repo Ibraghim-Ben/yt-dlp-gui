@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 import yt_dlp
 from .models import VideoInfo, FormatInfo, PlaylistEntry, MediaType
+from .ffmpeg_utils import setup_bundled_binaries, find_deno
 
 
 class _YTDLPLogger:
@@ -154,24 +155,43 @@ def _parse_video_info(info: dict, original_url: str) -> VideoInfo:
 
     subs_dict = info.get("subtitles") or {}
     auto_subs_dict = info.get("automatic_captions") or {}
-    
-    subtitles = []
+
+    detected_orig_lang = ""
+    for k in auto_subs_dict:
+        if k.endswith("-orig"):
+            detected_orig_lang = k[:-5]
+            break
+    if not detected_orig_lang:
+        detected_orig_lang = str(info.get("language") or "")
+
+    manual_subs: list[tuple[str, str]] = []
     for lang_code, subs_list in subs_dict.items():
-        if lang_code.endswith("-orig") or lang_code == "live_chat":
+        if not lang_code or lang_code.endswith("-orig") or lang_code == "live_chat":
             continue
         name = lang_code
-        if subs_list and isinstance(subs_list, list):
+        if subs_list and isinstance(subs_list, list) and subs_list[0]:
             name = subs_list[0].get("name") or lang_code
-        subtitles.append((lang_code, name))
+        manual_subs.append((lang_code, name))
+    manual_subs.sort(key=lambda x: x[1].lower())
 
-    orig_lang = info.get("language") or ""
-    if orig_lang and orig_lang not in subs_dict and orig_lang in auto_subs_dict:
-        subs_list = auto_subs_dict[orig_lang]
-        name = orig_lang
-        if subs_list and isinstance(subs_list, list):
-            name = subs_list[0].get("name") or orig_lang
-        subtitles.append((orig_lang, f"{name} (auto-generated)"))
-    subtitles.sort(key=lambda x: x[1])
+    real_auto_langs = {k[:-5] for k in auto_subs_dict if k.endswith("-orig")}
+    if not real_auto_langs and detected_orig_lang and detected_orig_lang in auto_subs_dict:
+        real_auto_langs = {detected_orig_lang}
+
+    auto_orig: list[tuple[str, str]] = []
+    for lang_code in sorted(real_auto_langs):
+        if not lang_code or lang_code in subs_dict or lang_code not in auto_subs_dict:
+            continue
+        subs_list = auto_subs_dict[lang_code]
+        name = lang_code
+        if subs_list and isinstance(subs_list, list) and subs_list[0]:
+            name = subs_list[0].get("name") or lang_code
+        if "auto" not in name.lower():
+            name = f"{name} (auto)"
+        auto_orig.append((lang_code, name))
+    auto_orig.sort(key=lambda x: x[1].lower())
+
+    subtitles = manual_subs + auto_orig
 
     return VideoInfo(
         url=original_url,
@@ -217,6 +237,8 @@ def extract_info(
     flat_playlist: bool = False,
     ffmpeg_path: Optional[str] = None,
 ) -> VideoInfo:
+    setup_bundled_binaries()
+
     def noop(level: str, msg: str) -> None:
         pass
 
@@ -228,6 +250,9 @@ def extract_info(
             "no_warnings": False,
             "extract_flat": "in_playlist" if flat_playlist else False,
         }
+        deno_exe = find_deno()
+        if deno_exe:
+            opts["js_runtimes"] = {"deno": {"path": deno_exe}}
         if with_cookies and cookies_browser:
             opts["cookiesfrombrowser"] = (cookies_browser,)
         if ffmpeg_path:
@@ -281,6 +306,8 @@ def build_ydl_opts(
     archive_file: Optional[str] = None,
     log_callback: Callable[[str, str], None],
 ) -> dict:
+    setup_bundled_binaries()
+
     opts: dict = {
         "outtmpl": output_template,
         "logger": _YTDLPLogger(log_callback),
@@ -289,6 +316,10 @@ def build_ydl_opts(
         "retries": 5,
         "fragment_retries": 5,
     }
+
+    deno_exe = find_deno()
+    if deno_exe:
+        opts["js_runtimes"] = {"deno": {"path": deno_exe}}
 
     if ffmpeg_path:
         opts["ffmpeg_location"] = ffmpeg_path
@@ -340,7 +371,7 @@ def build_ydl_opts(
     if embed_subs:
         if subs_langs.strip() == "all":
             opts["writesubtitles"] = True
-            opts["writeautomaticsub"] = True
+            opts["writeautomaticsub"] = not bool(manual_sub_langs)
             opts["subtitleslangs"] = ["all"]
         else:
             requested_langs = [lang.strip() for lang in subs_langs.split(",") if lang.strip()]

@@ -280,6 +280,7 @@ class FormatSelector(QWidget):
         self._subs_lang_cb = QComboBox()
         self._subs_lang_cb.setObjectName("subsLangCb")
         self._subs_lang_cb.setEnabled(False)
+        self._subs_lang_cb.currentTextChanged.connect(self._update_subs_combo_width)
         self._subs_cb.toggled.connect(self._subs_lang_cb.setEnabled)
         
         options_layout.addWidget(self._embed_thumb_cb)
@@ -344,18 +345,35 @@ class FormatSelector(QWidget):
         self._subs_lang_cb.clear()
         self._subs_lang_cb.addItem("All", "all")
         if video_info.subtitles:
-            en_index = -1
+            default_index = -1
             for lang_code, lang_name in video_info.subtitles:
-                display = f"{lang_name} ({lang_code})" if lang_name != lang_code else lang_code
+                if lang_name == lang_code:
+                    display = lang_code
+                elif f"({lang_code})" in lang_name:
+                    display = lang_name
+                else:
+                    display = f"{lang_name} ({lang_code})"
                 self._subs_lang_cb.addItem(display, lang_code)
-                if en_index < 0 and lang_code.lower().startswith("en"):
-                    en_index = self._subs_lang_cb.count() - 1
-            if en_index >= 0:
-                self._subs_lang_cb.setCurrentIndex(en_index)
+                if default_index < 0 and lang_code.lower().startswith("en"):
+                    default_index = self._subs_lang_cb.count() - 1
+            if default_index >= 0:
+                self._subs_lang_cb.setCurrentIndex(default_index)
+            elif self._subs_lang_cb.count() > 1:
+                self._subs_lang_cb.setCurrentIndex(1)
+            self._update_subs_combo_width()
             self._subs_cb.setEnabled(True)
         else:
+            self._update_subs_combo_width()
             self._subs_cb.setEnabled(False)
             self._subs_cb.setChecked(False)
+
+    def _update_subs_combo_width(self) -> None:
+        text = self._subs_lang_cb.currentText()
+        if not text:
+            self._subs_lang_cb.setFixedWidth(60)
+            return
+        text_width = self._subs_lang_cb.fontMetrics().horizontalAdvance(text)
+        self._subs_lang_cb.setFixedWidth(max(60, text_width + 42))
 
     def clear(self) -> None:
         self._video_info = None
@@ -366,6 +384,7 @@ class FormatSelector(QWidget):
         self._info_label.setText("No video loaded")
         self._download_btn.setEnabled(False)
         self._subs_lang_cb.clear()
+        self._update_subs_combo_width()
         self._subs_cb.setEnabled(False)
         self._subs_cb.setChecked(False)
 

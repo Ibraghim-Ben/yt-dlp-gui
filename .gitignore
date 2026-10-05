@@ -29,7 +29,7 @@ MANIFEST
 *.manifest
 *.spec.bak
 
-# Bundled binaries (ffmpeg/ffprobe, ~200MB+)
+# Bundled binaries (ffmpeg/ffprobe/deno, ~200MB+)
 src/resources/bin/*
 !src/resources/bin/.gitkeep
 
