@@ -63,6 +63,7 @@ class QueueManager(QObject):
                     "error_message": task.error_message,
                     "file_path": task.file_path,
                     "thumbnail_url": task.thumbnail_url,
+                    "assigned_template": task.assigned_template,
                 }
                 data.append(task_dict)
             
@@ -109,6 +110,7 @@ class QueueManager(QObject):
                         error_message=task_dict.get("error_message", ""),
                         file_path=task_dict.get("file_path", ""),
                         thumbnail_url=task_dict.get("thumbnail_url", ""),
+                        assigned_template=task_dict.get("assigned_template"),
                     )
                     self._tasks[task.id] = task
                     self._order.append(task.id)
@@ -134,6 +136,24 @@ class QueueManager(QObject):
         embed_thumbnail: bool = True,
         embed_metadata: bool = True,
     ) -> DownloadTask:
+        for tid in self._order:
+            existing = self._tasks.get(tid)
+            if (
+                existing
+                and existing.url == url
+                and existing.mode == mode
+                and existing.selected_format_id == selected_format_id
+                and existing.audio_format_id == audio_format_id
+                and existing.status in (
+                    DownloadStatus.QUEUED,
+                    DownloadStatus.DOWNLOADING,
+                    DownloadStatus.PAUSED,
+                    DownloadStatus.PROCESSING,
+                )
+            ):
+                self.log_message.emit("info", f"Task is already in queue: {title}")
+                return existing
+
         task_id = str(uuid.uuid4())
         cfg = self._config
         template = str(pathlib.PurePath(cfg.output_dir) / cfg.output_template)
@@ -174,6 +194,39 @@ class QueueManager(QObject):
         self._try_start_next()
         return tasks
 
+    def pause_task(self, task_id: str) -> None:
+        task = self._tasks.get(task_id)
+        if not task:
+            return
+        worker = self._workers.get(task_id)
+        if worker and worker.isRunning():
+            worker.pause()
+            task.status = DownloadStatus.PAUSED
+            self.task_updated.emit(task_id, task)
+            self._save_tasks()
+        elif task.status == DownloadStatus.QUEUED:
+            task.status = DownloadStatus.PAUSED
+            self.task_updated.emit(task_id, task)
+            self._save_tasks()
+
+    def resume_task(self, task_id: str) -> None:
+        task = self._tasks.get(task_id)
+        if not task or task.status != DownloadStatus.PAUSED:
+            return
+        old_worker = self._workers.get(task_id)
+        if old_worker and old_worker.isRunning():
+            task.status = DownloadStatus.QUEUED
+            self.task_updated.emit(task_id, task)
+            self._save_tasks()
+            return
+        task.status = DownloadStatus.QUEUED
+        self.task_updated.emit(task_id, task)
+        self._save_tasks()
+        if self._active_count() < self._config.max_parallel:
+            self._start_task(task)
+        else:
+            self._try_start_next()
+
     def cancel_task(self, task_id: str) -> None:
         worker = self._workers.get(task_id)
         if worker:
@@ -183,19 +236,18 @@ class QueueManager(QObject):
             task.status = DownloadStatus.CANCELLED
             self.task_updated.emit(task_id, task)
             self._save_tasks()
-            
             try:
-                if task.file_path and os.path.exists(task.file_path):
-                    try:
-                        os.remove(task.file_path)
-                    except OSError:
-                        pass
-                    
-                    if task.file_path.endswith(".part"):
-                        ytdl_path = task.file_path[:-5] + ".ytdl"
-                        if os.path.exists(ytdl_path):
+                if task.file_path:
+                    base = task.file_path
+                    if base.endswith(".part"):
+                        base = base[:-5]
+                    if base.endswith(".ytdl"):
+                        base = base[:-5]
+                    for ext in ["", ".part", ".ytdl"]:
+                        p = base + ext
+                        if os.path.exists(p):
                             try:
-                                os.remove(ytdl_path)
+                                os.remove(p)
                             except OSError:
                                 pass
             except OSError:
@@ -252,9 +304,15 @@ class QueueManager(QObject):
                 candidate = ydl.prepare_filename(fake_info)
             stem = candidate[: -len(".CHKEXT")]
             pattern = glob.escape(stem) + ".*"
+            ignored_exts = (
+                ".part", ".ytdl", ".tmp",
+                ".vtt", ".srt", ".ass", ".ssa", ".ttml", ".srv3", ".srv2", ".srv1", ".json3",
+                ".webp", ".jpg", ".jpeg", ".png",
+                ".info.json", ".description"
+            )
             hits = [
                 f for f in glob.glob(pattern)
-                if os.path.isfile(f) and not f.endswith((".part", ".ytdl", ".tmp"))
+                if os.path.isfile(f) and not f.lower().endswith(ignored_exts)
             ]
             if not hits and stem not in self._in_flight_templates:
                 return template
@@ -263,7 +321,7 @@ class QueueManager(QObject):
                 candidate_stem = stem + f" [{n}]"
                 on_disk = [
                     f for f in glob.glob(glob.escape(candidate_stem) + ".*")
-                    if os.path.isfile(f) and not f.endswith((".part", ".ytdl", ".tmp"))
+                    if os.path.isfile(f) and not f.lower().endswith(ignored_exts)
                 ]
                 if not on_disk and candidate_stem not in self._in_flight_templates:
                     if ".%(ext)s" in template:
@@ -279,7 +337,12 @@ class QueueManager(QObject):
         task.status = DownloadStatus.DOWNLOADING
         self.task_updated.emit(task.id, task)
 
-        unique_template = self._unique_template(task.output_template, task)
+        if task.assigned_template:
+            unique_template = task.assigned_template
+        else:
+            unique_template = self._unique_template(task.output_template, task)
+            task.assigned_template = unique_template
+            self._save_tasks()
 
         try:
             import yt_dlp as _yt
@@ -343,16 +406,21 @@ class QueueManager(QObject):
     def _on_status(self, task_id: str, status_name: str) -> None:
         task = self._tasks.get(task_id)
         if task:
+            if task.status == DownloadStatus.PAUSED and status_name in (
+                DownloadStatus.PAUSED.name,
+                DownloadStatus.CANCELLED.name,
+            ):
+                return
             task.status = DownloadStatus[status_name]
             self.task_updated.emit(task_id, task)
             self._save_tasks()
 
-    def _on_finished(self, task_id: str, output_dir: str) -> None:
+    def _on_finished(self, task_id: str, output_dir: str, file_path: str) -> None:
         task = self._tasks.get(task_id)
         if task:
             task.status = DownloadStatus.DONE
             task.progress = 100.0
-            task.file_path = output_dir
+            task.file_path = file_path if (file_path and os.path.isfile(file_path)) else output_dir
             self.task_updated.emit(task_id, task)
             self._save_tasks()
 
@@ -372,7 +440,8 @@ class QueueManager(QObject):
         if task:
             try:
                 import yt_dlp as _yt
-                with _yt.YoutubeDL({"outtmpl": task.output_template, "quiet": True}) as ydl:
+                tmpl = task.assigned_template or task.output_template
+                with _yt.YoutubeDL({"outtmpl": tmpl, "quiet": True}) as ydl:
                     stem = ydl.prepare_filename({
                         "title": task.title,
                         "uploader": task.video_info.channel if task.video_info else task.title,

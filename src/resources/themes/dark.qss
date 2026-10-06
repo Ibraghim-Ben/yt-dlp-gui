@@ -200,18 +200,14 @@ QPushButton#downloadBtn:disabled {
     color: #585b70;
 }
 
-QPushButton#taskCancelBtn {
+QPushButton#taskPauseBtn, QPushButton#taskCancelBtn {
     background-color: transparent;
-    color: #6c7086;
     border: none;
-    border-radius: 4px;
-    padding: 2px;
-    font-size: 9pt;
+    padding: 0px;
 }
 
-QPushButton#taskCancelBtn:hover {
-    background-color: #f38ba8;
-    color: #1e1e2e;
+QPushButton#taskPauseBtn:hover, QPushButton#taskCancelBtn:hover {
+    background-color: transparent;
 }
 
 QPushButton#clearDoneBtn {

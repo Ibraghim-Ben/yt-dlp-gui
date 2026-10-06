@@ -1,1 +1,1 @@
-# Place external binaries (ffmpeg.exe, ffprobe.exe, deno.exe) here
+# Place external binaries (ffmpeg.exe, ffprobe.exe, qjs.exe, libwinpthread-1.dll) here

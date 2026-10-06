@@ -69,12 +69,14 @@ class MainWindow(QMainWindow):
         tb.installEventFilter(self._tooltip_filter)
 
         settings_act = QAction("⚙  Settings", self)
+        settings_act.setToolTip("")
         settings_act.triggered.connect(self._open_settings)
         tb.addAction(settings_act)
 
         tb.addSeparator()
 
         self._log_act = QAction("📋  Log", self)
+        self._log_act.setToolTip("")
         self._log_act.setCheckable(True)
         self._log_act.setChecked(False)
         self._log_act.toggled.connect(self._toggle_log)
@@ -115,6 +117,8 @@ class MainWindow(QMainWindow):
         self._main_splitter.addWidget(left_widget)
 
         self._dl_queue = DownloadQueue()
+        self._dl_queue.pause_requested.connect(self._queue.pause_task)
+        self._dl_queue.resume_requested.connect(self._queue.resume_task)
         self._dl_queue.cancel_requested.connect(self._queue.cancel_task)
         self._dl_queue.remove_requested.connect(self._queue.remove_task)
         self._main_splitter.addWidget(self._dl_queue)

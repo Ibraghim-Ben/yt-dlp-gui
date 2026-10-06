@@ -10,6 +10,7 @@ class DownloadStatus(Enum):
     ANALYZING = auto()
     DOWNLOADING = auto()
     PROCESSING = auto()
+    PAUSED = auto()
     DONE = auto()
     ERROR = auto()
     CANCELLED = auto()
@@ -185,3 +186,4 @@ class DownloadTask:
     error_message: str = ""
     file_path: str = ""
     thumbnail_url: str = ""
+    assigned_template: Optional[str] = None

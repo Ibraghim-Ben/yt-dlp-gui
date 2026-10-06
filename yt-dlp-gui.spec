@@ -8,7 +8,7 @@ tmp_ret = collect_all('yt_dlp')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 bin_dir = os.path.join('src', 'resources', 'bin')
-for exe in ('ffmpeg.exe', 'ffprobe.exe', 'deno.exe'):
+for exe in ('ffmpeg.exe', 'ffprobe.exe', 'qjs.exe', 'libwinpthread-1.dll'):
     exe_path = os.path.join(bin_dir, exe)
     if os.path.isfile(exe_path):
         binaries.append((exe_path, 'bin'))

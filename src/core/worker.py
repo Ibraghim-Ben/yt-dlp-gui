@@ -36,7 +36,7 @@ class DownloadWorker(QThread):
     progress_updated = pyqtSignal(str, float, str, str, str)
     status_changed = pyqtSignal(str, str)
     log_message = pyqtSignal(str, str)
-    download_finished = pyqtSignal(str, str)
+    download_finished = pyqtSignal(str, str, str)
     errored = pyqtSignal(str, str)
 
     def __init__(self, task: DownloadTask, ydl_opts: dict):
@@ -44,7 +44,9 @@ class DownloadWorker(QThread):
         self._task = task
         self._ydl_opts = ydl_opts
         self._cancelled = False
+        self._paused = False
         self._files_to_clean: set[str] = set()
+        self._last_filepath: str = ""
 
     def run(self) -> None:
         self.status_changed.emit(self._task.id, DownloadStatus.DOWNLOADING.name)
@@ -52,13 +54,31 @@ class DownloadWorker(QThread):
             ydl_opts = dict(self._ydl_opts)
             ydl_opts["progress_hooks"] = [self._progress_hook]
             ydl_opts["postprocessor_hooks"] = [self._postprocessor_hook]
+
+            logger = ydl_opts.get("logger")
+            if logger and hasattr(logger, "_cb"):
+                orig_cb = logger._cb
+                def _worker_log_cb(lvl: str, msg: str) -> None:
+                    if "The download was cancelled" in msg:
+                        if self._paused:
+                            orig_cb("info", "Download paused by user")
+                            return
+                        elif self._cancelled:
+                            orig_cb("info", "Download cancelled by user")
+                            return
+                    orig_cb(lvl, msg)
+                logger._cb = _worker_log_cb
+
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([self._task.url])
-            if not self._cancelled:
-                self.download_finished.emit(self._task.id, self._task.output_dir)
+            if not self._cancelled and not self._paused:
+                self.download_finished.emit(self._task.id, self._task.output_dir, self._last_filepath)
         except yt_dlp.utils.DownloadCancelled:
-            self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
-            self._cleanup_partial_files()
+            if self._paused:
+                self.status_changed.emit(self._task.id, DownloadStatus.PAUSED.name)
+            else:
+                self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
+                self._cleanup_partial_files()
         except Exception as exc:
             self._cleanup_partial_files()
             self.errored.emit(self._task.id, friendly_error(exc))
@@ -68,7 +88,7 @@ class DownloadWorker(QThread):
         if filepath:
             self._files_to_clean.add(filepath)
 
-        if self._cancelled:
+        if self._cancelled or self._paused:
             raise yt_dlp.utils.DownloadCancelled()
 
         status = d.get("status")
@@ -84,12 +104,15 @@ class DownloadWorker(QThread):
             total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
             downloaded = d.get("downloaded_bytes") or 0
             pct = (downloaded / total * 100) if total else 0
-            speed = str(d.get("_speed_str") or "").strip()
-            eta = str(d.get("_eta_str") or "").strip()
+            speed = yt_dlp.utils.remove_terminal_sequences(str(d.get("_speed_str") or "")).strip()
+            eta = yt_dlp.utils.remove_terminal_sequences(str(d.get("_eta_str") or "")).strip()
             self.progress_updated.emit(self._task.id, pct, speed, eta, filepath)
         elif status == "finished":
             if is_subtitle:
                 return
+            clean = str(d.get("filename") or "")
+            if clean and os.path.isfile(clean):
+                self._last_filepath = clean
             self.status_changed.emit(self._task.id, DownloadStatus.PROCESSING.name)
             self.progress_updated.emit(self._task.id, 100.0, "", "", "")
 
@@ -125,9 +148,19 @@ class DownloadWorker(QThread):
                 pass
 
     def _postprocessor_hook(self, d: dict) -> None:
-        if self._cancelled:
+        if self._cancelled or self._paused:
             raise yt_dlp.utils.DownloadCancelled()
+
+        if d.get("status") == "finished":
+            final = str(d.get("info_dict", {}).get("filepath") or
+                        d.get("info_dict", {}).get("_filename") or
+                        d.get("filepath") or "")
+            if final and os.path.isfile(final):
+                self._last_filepath = final
 
     def cancel(self) -> None:
         self._cancelled = True
+
+    def pause(self) -> None:
+        self._paused = True
 

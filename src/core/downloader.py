@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 import yt_dlp
 from .models import VideoInfo, FormatInfo, PlaylistEntry, MediaType
-from .ffmpeg_utils import setup_bundled_binaries, find_deno
+from .ffmpeg_utils import setup_bundled_binaries, find_quickjs
 
 
 class _YTDLPLogger:
@@ -109,6 +109,21 @@ def _parse_format(fmt: dict, duration: Optional[float] = None) -> Optional[Forma
     )
 
 
+def _get_best_thumbnail_url(info: dict) -> Optional[str]:
+    thumbs = info.get("thumbnails")
+    if thumbs and isinstance(thumbs, list):
+        valid = [t for t in thumbs if isinstance(t, dict) and t.get("url")]
+        if valid:
+            def _score(t: dict) -> tuple:
+                pref = t.get("preference") if t.get("preference") is not None else -1
+                w = t.get("width") or 0
+                h = t.get("height") or 0
+                return (pref, w * h, w)
+            best = max(valid, key=_score)
+            return best.get("url")
+    return info.get("thumbnail")
+
+
 def _parse_video_info(info: dict, original_url: str) -> VideoInfo:
     raw_formats = info.get("formats", [])
     duration = info.get("duration")
@@ -148,7 +163,7 @@ def _parse_video_info(info: dict, original_url: str) -> VideoInfo:
                 title=entry.get("title") or f"Video {i + 1}",
                 duration=entry.get("duration"),
                 uploader=entry.get("uploader") or entry.get("channel"),
-                thumbnail=entry.get("thumbnail"),
+                thumbnail=_get_best_thumbnail_url(entry),
                 index=i + 1,
                 available=entry.get("availability", "public") not in ("private", "premium_only", "subscriber_only", "needs_auth"),
             ))
@@ -198,7 +213,7 @@ def _parse_video_info(info: dict, original_url: str) -> VideoInfo:
         title=info.get("title") or "Unknown",
         channel=info.get("uploader") or info.get("channel"),
         duration=info.get("duration"),
-        thumbnail=info.get("thumbnail"),
+        thumbnail=_get_best_thumbnail_url(info),
         webpage_url=info.get("webpage_url"),
         formats=formats,
         is_playlist=is_playlist,
@@ -250,9 +265,9 @@ def extract_info(
             "no_warnings": False,
             "extract_flat": "in_playlist" if flat_playlist else False,
         }
-        deno_exe = find_deno()
-        if deno_exe:
-            opts["js_runtimes"] = {"deno": {"path": deno_exe}}
+        qjs_exe = find_quickjs()
+        if qjs_exe:
+            opts["js_runtimes"] = {"quickjs": {"path": qjs_exe}}
         if with_cookies and cookies_browser:
             opts["cookiesfrombrowser"] = (cookies_browser,)
         if ffmpeg_path:
@@ -315,11 +330,12 @@ def build_ydl_opts(
         "nooverwrites": False,
         "retries": 5,
         "fragment_retries": 5,
+        "color": "no_color",
     }
 
-    deno_exe = find_deno()
-    if deno_exe:
-        opts["js_runtimes"] = {"deno": {"path": deno_exe}}
+    qjs_exe = find_quickjs()
+    if qjs_exe:
+        opts["js_runtimes"] = {"quickjs": {"path": qjs_exe}}
 
     if ffmpeg_path:
         opts["ffmpeg_location"] = ffmpeg_path

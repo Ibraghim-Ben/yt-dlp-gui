@@ -42,9 +42,9 @@ def find_ffmpeg() -> str:
     return ""
 
 
-def find_deno() -> str:
+def find_quickjs() -> str:
     base_dir = os.path.dirname(os.path.dirname(__file__))
-    exe_name = "deno.exe" if sys.platform == "win32" else "deno"
+    exe_name = "qjs.exe" if sys.platform == "win32" else "qjs"
     bundled = os.path.join(base_dir, "resources", "bin", exe_name)
     if os.path.isfile(bundled):
         return bundled
@@ -53,29 +53,19 @@ def find_deno() -> str:
     if os.path.isfile(meipass_bundled):
         return meipass_bundled
 
-    custom = os.environ.get("DENO_PATH", "")
+    custom = os.environ.get("QUICKJS_PATH", "")
     if custom and os.path.isfile(custom):
         return custom
 
-    found = shutil.which("deno")
+    found = shutil.which("qjs")
     if found:
         return found
-
-    if sys.platform == "win32":
-        candidates = [
-            os.path.join(os.path.expanduser("~"), ".deno", "bin", "deno.exe"),
-            r"C:\Program Files\deno\deno.exe",
-            os.path.join(os.path.dirname(sys.executable), "deno.exe"),
-        ]
-        for path in candidates:
-            if os.path.isfile(path):
-                return path
 
     return ""
 
 
 def setup_bundled_binaries() -> dict[str, str]:
-    """Ensures bundled external binaries (ffmpeg, ffprobe, deno) are on PATH and detectable."""
+    """Ensures bundled external binaries (ffmpeg, ffprobe, quickjs) are on PATH and detectable."""
     base_dir = os.path.dirname(os.path.dirname(__file__))
     candidates = [
         os.path.join(base_dir, "resources", "bin"),
@@ -96,15 +86,15 @@ def setup_bundled_binaries() -> dict[str, str]:
     if new_dirs:
         os.environ["PATH"] = os.pathsep.join(new_dirs + [current_path])
 
-    deno = find_deno()
-    if deno:
-        os.environ["DENO_PATH"] = deno
+    quickjs = find_quickjs()
+    if quickjs:
+        os.environ["QUICKJS_PATH"] = quickjs
 
     ffmpeg = find_ffmpeg()
     if ffmpeg and "FFMPEG_PATH" not in os.environ:
         os.environ["FFMPEG_PATH"] = ffmpeg
 
-    return {"deno": deno, "ffmpeg": ffmpeg}
+    return {"quickjs": quickjs, "ffmpeg": ffmpeg}
 
 
 def validate_ffmpeg(path: str) -> tuple[bool, str]:

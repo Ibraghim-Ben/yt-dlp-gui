@@ -61,13 +61,20 @@ class ThumbnailLabel(QLabel):
         painter.setClipPath(path)
 
         if self._pixmap and not self._pixmap.isNull():
+            ratio = self.devicePixelRatio()
+            from PyQt6.QtCore import QSize as _QSize
+            physical_size = _QSize(
+                int(self.width() * ratio),
+                int(self.height() * ratio),
+            )
             scaled = self._pixmap.scaled(
-                self.size(),
+                physical_size,
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            x = (self.width() - scaled.width()) // 2
-            y = (self.height() - scaled.height()) // 2
+            scaled.setDevicePixelRatio(ratio)
+            x = int((self.width()  - scaled.width()  / ratio) // 2)
+            y = int((self.height() - scaled.height() / ratio) // 2)
             painter.drawPixmap(x, y, scaled)
         else:
             is_dark = self.palette().window().color().lightness() < 128
@@ -401,10 +408,19 @@ class FormatSelector(QWidget):
         self._download_btn.clicked.connect(self._on_download)
         root.addWidget(self._download_btn)
 
+    def _stop_thumb_thread(self) -> None:
+        if self._thumb_thread is not None:
+            try:
+                if self._thumb_thread.isRunning():
+                    self._thumb_thread.quit()
+                    self._thumb_thread.wait(200)
+            except RuntimeError:
+                pass
+            self._thumb_thread = None
+            self._thumb_loader = None
+
     def _load_thumbnail(self, url: str) -> None:
-        if self._thumb_thread and self._thumb_thread.isRunning():
-            self._thumb_thread.quit()
-            self._thumb_thread.wait(200)
+        self._stop_thumb_thread()
 
         self._thumb_label.clear_pixmap()
         self._thumb_label.setVisible(False)
@@ -418,6 +434,14 @@ class FormatSelector(QWidget):
         loader.finished.connect(thread.quit)
         thread.finished.connect(loader.deleteLater)
         thread.finished.connect(thread.deleteLater)
+
+        def _on_thread_done() -> None:
+            if self._thumb_thread is thread:
+                self._thumb_thread = None
+                self._thumb_loader = None
+
+        thread.finished.connect(_on_thread_done)
+
         self._thumb_thread = thread
         self._thumb_loader = loader
         thread.start()
@@ -425,6 +449,7 @@ class FormatSelector(QWidget):
     def _on_thumb_loaded(self, data: bytes) -> None:
         px = QPixmap()
         if px.loadFromData(data) and not px.isNull():
+            px.setDevicePixelRatio(self._thumb_label.devicePixelRatio())
             self._thumb_label.set_pixmap(px)
             self._thumb_label.setVisible(True)
 
@@ -492,9 +517,7 @@ class FormatSelector(QWidget):
         if self._model is not None:
             self._model.deleteLater()
             self._model = None
-        if self._thumb_thread and self._thumb_thread.isRunning():
-            self._thumb_thread.quit()
-            self._thumb_thread.wait(200)
+        self._stop_thumb_thread()
         self._thumb_label.clear_pixmap()
         self._thumb_label.setVisible(False)
         self._info_label.setText("No video loaded")

@@ -180,18 +180,14 @@ QPushButton#clearDoneBtn:hover {
     background-color: #ccd0da;
 }
 
-QPushButton#taskCancelBtn {
+QPushButton#taskPauseBtn, QPushButton#taskCancelBtn {
     background-color: transparent;
-    color: #acb0be;
     border: none;
-    border-radius: 4px;
-    padding: 2px;
-    font-size: 9pt;
+    padding: 0px;
 }
 
-QPushButton#taskCancelBtn:hover {
-    background-color: #d20f39;
-    color: #ffffff;
+QPushButton#taskPauseBtn:hover, QPushButton#taskCancelBtn:hover {
+    background-color: transparent;
 }
 
 QTableView {

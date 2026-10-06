@@ -1,12 +1,13 @@
 from __future__ import annotations
+import os
+import subprocess
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QProgressBar, QPushButton, QSizePolicy, QMessageBox,
     QLabel, QProgressBar, QPushButton, QSizePolicy, QMessageBox, QApplication,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QPointF, QRectF
+from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
 from ..core.models import DownloadTask, DownloadStatus
-
 
 
 _STATUS_LABELS = {
@@ -14,13 +15,98 @@ _STATUS_LABELS = {
     DownloadStatus.ANALYZING:   "Analyzing…",
     DownloadStatus.DOWNLOADING: "Downloading",
     DownloadStatus.PROCESSING:  "Processing…",
+    DownloadStatus.PAUSED:      "Paused",
     DownloadStatus.DONE:        "Done",
     DownloadStatus.ERROR:       "Error",
     DownloadStatus.CANCELLED:   "Cancelled",
 }
 
 
+class ActionButton(QPushButton):
+    def __init__(self, icon_type: str, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(18, 18)
+        self._icon_type = icon_type
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_icon_type(self, icon_type: str) -> None:
+        if self._icon_type != icon_type:
+            self._icon_type = icon_type
+            self.update()
+
+    def enterEvent(self, event) -> None:
+        super().enterEvent(event)
+        self.update()
+
+    def leaveEvent(self, event) -> None:
+        super().leaveEvent(event)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = self.rect()
+        is_hover = self.underMouse() and self.isEnabled()
+        is_dark = self.palette().window().color().lightness() < 128
+
+        if is_hover:
+            if self._icon_type == "cancel":
+                bg = QColor("#f38ba8") if is_dark else QColor("#d20f39")
+                fg = QColor("#1e1e2e") if is_dark else QColor("#ffffff")
+            else:
+                bg = QColor("#89b4fa") if is_dark else QColor("#1e66f5")
+                fg = QColor("#1e1e2e") if is_dark else QColor("#ffffff")
+            painter.setBrush(QBrush(bg))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(QRectF(1.0, 1.0, 16.0, 16.0), 3.0, 3.0)
+        else:
+            if self._icon_type == "cancel":
+                fg = QColor("#6c7086") if is_dark else QColor("#acb0be")
+            else:
+                fg = QColor("#a6adc8") if is_dark else QColor("#6c6f85")
+
+        cx = r.width() / 2.0
+        cy = r.height() / 2.0
+
+        if self._icon_type == "play":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(fg))
+            points = [
+                QPointF(cx - 3.5, cy - 4.5),
+                QPointF(cx + 4.5, cy),
+                QPointF(cx - 3.5, cy + 4.5),
+            ]
+            painter.drawPolygon(points)
+        elif self._icon_type == "pause":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(fg))
+            painter.drawRoundedRect(QRectF(cx - 4.0, cy - 4.5, 2.6, 9.0), 1.0, 1.0)
+            painter.drawRoundedRect(QRectF(cx + 1.4, cy - 4.5, 2.6, 9.0), 1.0, 1.0)
+        elif self._icon_type == "cancel":
+            pen = QPen(fg, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            s = 3.8
+            painter.drawLine(QPointF(cx - s, cy - s), QPointF(cx + s, cy + s))
+            painter.drawLine(QPointF(cx - s, cy + s), QPointF(cx + s, cy - s))
+        elif self._icon_type == "folder":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(fg))
+            painter.drawRoundedRect(QRectF(cx - 5.0, cy - 2.5, 10.0, 7.0), 1.5, 1.5)
+            painter.drawRoundedRect(QRectF(cx - 5.0, cy - 4.5, 4.5, 2.5), 1.0, 1.0)
+        elif self._icon_type == "file_play":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(fg))
+            points = [
+                QPointF(cx - 2.5, cy - 3.5),
+                QPointF(cx + 3.5, cy),
+                QPointF(cx - 2.5, cy + 3.5),
+            ]
+            painter.drawPolygon(points)
+
+
 class TaskItemWidget(QWidget):
+    pause_clicked = pyqtSignal(str)
+    resume_clicked = pyqtSignal(str)
     cancel_clicked = pyqtSignal(str)
     remove_clicked = pyqtSignal(str)
 
@@ -29,6 +115,8 @@ class TaskItemWidget(QWidget):
         self.setObjectName("taskItemWidget")
         self._task_id = task.id
         self._status = task.status
+        self._file_path = task.file_path
+        self._output_dir = task.output_dir
         self._build_ui(task)
 
     @property
@@ -41,25 +129,45 @@ class TaskItemWidget(QWidget):
         root.setSpacing(4)
 
         top = QHBoxLayout()
-        top.setSpacing(8)
+        top.setSpacing(6)
+        top.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self._title_label = QLabel(task.title)
         self._title_label.setObjectName("taskTitle")
         self._title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._title_label.setMaximumWidth(999)
-        top.addWidget(self._title_label, 1)
+        top.addWidget(self._title_label, 1, Qt.AlignmentFlag.AlignVCenter)
 
         self._status_label = QLabel()
         self._status_label.setObjectName("taskStatus")
-        self._status_label.setFixedWidth(90)
+        self._status_label.setFixedWidth(100)
+        self._status_label.setFixedHeight(18)
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        top.addWidget(self._status_label)
+        top.addWidget(self._status_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self._cancel_btn = QPushButton("✕")
+        self._pause_btn = ActionButton("pause")
+        self._pause_btn.setObjectName("taskPauseBtn")
+        self._pause_btn.clicked.connect(self._on_pause_toggle)
+        top.addWidget(self._pause_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._open_folder_btn = ActionButton("folder")
+        self._open_folder_btn.setObjectName("taskOpenFolderBtn")
+        self._open_folder_btn.setToolTip("Open folder")
+        self._open_folder_btn.setVisible(False)
+        self._open_folder_btn.clicked.connect(self._on_open_folder)
+        top.addWidget(self._open_folder_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._open_file_btn = ActionButton("file_play")
+        self._open_file_btn.setObjectName("taskOpenFileBtn")
+        self._open_file_btn.setToolTip("Open file")
+        self._open_file_btn.setVisible(False)
+        self._open_file_btn.clicked.connect(self._on_open_file)
+        top.addWidget(self._open_file_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._cancel_btn = ActionButton("cancel")
         self._cancel_btn.setObjectName("taskCancelBtn")
-        self._cancel_btn.setFixedSize(22, 22)
         self._cancel_btn.clicked.connect(self._on_cancel)
-        top.addWidget(self._cancel_btn)
+        top.addWidget(self._cancel_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         root.addLayout(top)
 
@@ -91,6 +199,8 @@ class TaskItemWidget(QWidget):
 
     def update_task(self, task: DownloadTask) -> None:
         self._status = task.status
+        self._file_path = task.file_path
+        self._output_dir = task.output_dir
         self._title_label.setText(task.title)
         self._progress.setValue(int(task.progress))
 
@@ -127,6 +237,23 @@ class TaskItemWidget(QWidget):
         self._error_label.style().unpolish(self._error_label)
         self._error_label.style().polish(self._error_label)
 
+        if task.status == DownloadStatus.PAUSED:
+            self._pause_btn.setVisible(True)
+            self._pause_btn.setEnabled(True)
+            self._pause_btn.set_icon_type("play")
+            self._pause_btn.setToolTip("Resume")
+        elif task.status in (DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED):
+            self._pause_btn.setVisible(True)
+            self._pause_btn.setEnabled(True)
+            self._pause_btn.set_icon_type("pause")
+            self._pause_btn.setToolTip("Pause")
+        else:
+            self._pause_btn.setVisible(False)
+
+        is_done = task.status == DownloadStatus.DONE
+        self._open_folder_btn.setVisible(is_done)
+        self._open_file_btn.setVisible(is_done)
+
         is_terminal = task.status in (
             DownloadStatus.DONE, DownloadStatus.ERROR, DownloadStatus.CANCELLED
         )
@@ -135,6 +262,27 @@ class TaskItemWidget(QWidget):
         self._cancel_btn.setToolTip(
             "Remove" if is_terminal else ("Processing…" if is_processing else "Cancel")
         )
+
+    def _on_pause_toggle(self) -> None:
+        if self._status == DownloadStatus.PAUSED:
+            self._pause_btn.setEnabled(False)
+            self.resume_clicked.emit(self._task_id)
+        elif self._status in (DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED):
+            self._pause_btn.setEnabled(False)
+            self.pause_clicked.emit(self._task_id)
+
+    def _on_open_folder(self) -> None:
+        if self._file_path and os.path.isfile(self._file_path):
+            # /select, and the path MUST be a single argument — no space between them
+            subprocess.Popen(["explorer", f"/select,{os.path.normpath(self._file_path)}"])
+        elif self._output_dir and os.path.isdir(self._output_dir):
+            os.startfile(self._output_dir)
+
+    def _on_open_file(self) -> None:
+        if self._file_path and os.path.isfile(self._file_path):
+            os.startfile(os.path.normpath(self._file_path))
+        elif self._output_dir and os.path.isdir(self._output_dir):
+            os.startfile(self._output_dir)
 
     def _on_cancel(self) -> None:
         is_active = self._status not in (DownloadStatus.DONE, DownloadStatus.ERROR, DownloadStatus.CANCELLED)
@@ -153,6 +301,8 @@ class TaskItemWidget(QWidget):
 
 
 class DownloadQueue(QWidget):
+    pause_requested = pyqtSignal(str)
+    resume_requested = pyqtSignal(str)
     cancel_requested = pyqtSignal(str)
     remove_requested = pyqtSignal(str)
 
@@ -181,6 +331,8 @@ class DownloadQueue(QWidget):
 
         self._list = QListWidget()
         self._list.setObjectName("queueList")
+        self._list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._list.setSpacing(2)
         self._list.setUniformItemSizes(False)
         self._list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
@@ -191,6 +343,8 @@ class DownloadQueue(QWidget):
 
     def add_task(self, task: DownloadTask) -> None:
         widget = TaskItemWidget(task)
+        widget.pause_clicked.connect(self.pause_requested)
+        widget.resume_clicked.connect(self.resume_requested)
         widget.cancel_clicked.connect(self.cancel_requested)
         widget.remove_clicked.connect(self.remove_requested)
 
