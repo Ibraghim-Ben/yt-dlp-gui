@@ -22,9 +22,19 @@ def _normalize_url(text: str) -> str | None:
 
 
 class SelectableLineEdit(QLineEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._select_on_click = False
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self._select_on_click = True
+
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        self.selectAll()
+        if self._select_on_click:
+            self.selectAll()
+            self._select_on_click = False
 
 
 class UrlBar(QWidget):

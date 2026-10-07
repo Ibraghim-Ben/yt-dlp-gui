@@ -40,6 +40,7 @@ class MainWindow(QMainWindow):
         self._queue = queue
         self._analyze_worker: Optional[AnalyzeWorker] = None
         self._current_video: Optional[VideoInfo] = None
+        self._last_clipboard_url: str = _normalize_url(QApplication.clipboard().text().strip()) or ""
 
         self.setWindowTitle("yt-dlp GUI")
         if not QApplication.windowIcon().isNull():
@@ -160,6 +161,7 @@ class MainWindow(QMainWindow):
             self._dl_queue.add_task(task)
 
     def _on_analyze(self, url: str) -> None:
+        self._last_clipboard_url = url
         try:
             if self._analyze_worker and self._analyze_worker.isRunning():
                 self._status.showMessage("Already analyzing… please wait.")
@@ -408,6 +410,33 @@ class MainWindow(QMainWindow):
                     self._on_analyze(normalized)
                     return True
         return super().eventFilter(obj, event)
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self._check_clipboard()
+
+    def _check_clipboard(self) -> None:
+        if not self._config.clipboard_monitor:
+            return
+        try:
+            if self._analyze_worker and self._analyze_worker.isRunning():
+                return
+        except RuntimeError:
+            self._analyze_worker = None
+        text = QApplication.clipboard().text().strip()
+        normalized = _normalize_url(text)
+        if not normalized:
+            return
+        if normalized == self._last_clipboard_url:
+            return
+        current_text = self._url_bar._edit.text().strip()
+        if normalized == current_text:
+            self._last_clipboard_url = normalized
+            return
+        self._last_clipboard_url = normalized
+        self._url_bar.set_url(normalized)
+        self._on_analyze(normalized)
 
     def closeEvent(self, event) -> None:
         if self._queue.has_active_tasks():

@@ -21,6 +21,7 @@ class Config:
     cookies_browser: str = ""
     download_archive: str = ""
     window_geometry: str = ""
+    clipboard_monitor: bool = False
     corrupted_backup_path: str = field(default="", repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -30,6 +31,8 @@ class Config:
             self.max_parallel = 2
         if not isinstance(self.window_geometry, str):
             self.window_geometry = ""
+        if not isinstance(self.clipboard_monitor, bool):
+            self.clipboard_monitor = bool(self.clipboard_monitor)
 
     @staticmethod
     def load() -> "Config":

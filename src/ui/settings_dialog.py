@@ -1,7 +1,7 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QLabel, QLineEdit, QComboBox,
+    QLabel, QLineEdit, QComboBox, QCheckBox,
     QSpinBox, QDialogButtonBox,
     QFormLayout, QMessageBox, QApplication, QPushButton, QFileDialog,
 )
@@ -64,6 +64,9 @@ class SettingsDialog(QDialog):
         parallel_hint = QLabel("Maximum 10 concurrent downloads")
         parallel_hint.setObjectName("hintLabel")
         form.addRow("", parallel_hint)
+
+        self._clipboard_check = QCheckBox("Auto-detect copied video links on window focus")
+        form.addRow("Clipboard:", self._clipboard_check)
 
         return w
 
@@ -176,6 +179,7 @@ class SettingsDialog(QDialog):
             self._cookies_browser.setCurrentIndex(idx)
 
         self._ffmpeg_path.setText(cfg.ffmpeg_path or "")
+        self._clipboard_check.setChecked(cfg.clipboard_monitor)
         self._initial_state = self._get_current_state()
 
     def _get_current_state(self) -> tuple:
@@ -187,6 +191,7 @@ class SettingsDialog(QDialog):
             self._rate_unit.currentText(),
             self._cookies_browser.currentText(),
             self._ffmpeg_path.text(),
+            self._clipboard_check.isChecked(),
         )
 
     def _has_unsaved_changes(self) -> bool:
@@ -200,6 +205,7 @@ class SettingsDialog(QDialog):
         cfg.output_template = new_template or cfg.output_template
         cfg.theme = self._theme_combo.currentText()
         cfg.max_parallel = self._parallel_spin.value()
+        cfg.clipboard_monitor = self._clipboard_check.isChecked()
         
         rate_v = self._rate_val.text().strip()
         if rate_v:
