@@ -176,8 +176,23 @@ class SettingsDialog(QDialog):
             self._cookies_browser.setCurrentIndex(idx)
 
         self._ffmpeg_path.setText(cfg.ffmpeg_path or "")
+        self._initial_state = self._get_current_state()
 
-    def _save_and_accept(self) -> None:
+    def _get_current_state(self) -> tuple:
+        return (
+            self._template.text(),
+            self._theme_combo.currentText(),
+            self._parallel_spin.value(),
+            self._rate_val.text(),
+            self._rate_unit.currentText(),
+            self._cookies_browser.currentText(),
+            self._ffmpeg_path.text(),
+        )
+
+    def _has_unsaved_changes(self) -> bool:
+        return hasattr(self, "_initial_state") and self._get_current_state() != self._initial_state
+
+    def _save_settings(self) -> bool:
         cfg = self._config
         def to_ytdlp_format(tmpl: str) -> str:
             return tmpl.replace("[title]", "%(title)s").replace("[uploader]", "%(uploader)s").replace("[id]", "%(id)s").replace("[ext]", "%(ext)s").replace("[resolution]", "%(resolution)s")
@@ -202,12 +217,41 @@ class SettingsDialog(QDialog):
                 cfg.ffmpeg_path = ffmpeg_val
             else:
                 QMessageBox.warning(self, "Invalid FFmpeg", f"The specified FFmpeg path is not valid:\n{ffmpeg_val}\n\nReason: {msg}")
-                return
+                return False
         else:
             cfg.ffmpeg_path = ""
         try:
             cfg.save()
         except Exception as e:
             QMessageBox.warning(self, "Save Settings Failed", f"Could not save configuration:\n{e}")
+            return False
         load_theme(QApplication.instance(), cfg.theme)
-        self.accept()
+        self._initial_state = self._get_current_state()
+        return True
+
+    def _save_and_accept(self) -> None:
+        if self._save_settings():
+            self.accept()
+
+    def reject(self) -> None:
+        if self._has_unsaved_changes():
+            ret = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "Do you want to save changes before closing?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard,
+                QMessageBox.StandardButton.Save,
+            )
+            if ret == QMessageBox.StandardButton.Save:
+                if not self._save_settings():
+                    return
+                self.accept()
+                return
+        super().reject()
+
+    def closeEvent(self, event) -> None:
+        self.reject()
+        if self.isVisible():
+            event.ignore()
+        else:
+            event.accept()
