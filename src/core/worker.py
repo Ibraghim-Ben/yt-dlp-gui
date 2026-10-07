@@ -59,6 +59,17 @@ class DownloadWorker(QThread):
             if logger and hasattr(logger, "_cb"):
                 orig_cb = logger._cb
                 def _worker_log_cb(lvl: str, msg: str) -> None:
+                    if "writing video thumbnail to:" in msg.lower():
+                        parts = msg.split("Writing video thumbnail to:", 1)
+                        if len(parts) > 1:
+                            thumb_path = parts[1].strip()
+                            if thumb_path:
+                                self._files_to_clean.add(thumb_path)
+                    elif "converting thumbnail" in msg.lower():
+                        import re
+                        m = re.search(r'["\'](.*?)["\']', msg)
+                        if m:
+                            self._files_to_clean.add(m.group(1))
                     if "The download was cancelled" in msg:
                         if self._paused:
                             orig_cb("info", "Download paused by user")
@@ -118,12 +129,33 @@ class DownloadWorker(QThread):
 
     def _cleanup_partial_files(self) -> None:
         import glob
+        import re
         
         safe_exts = [
-            ".jpg", ".webp", ".png", 
-            ".vtt", ".srt", ".ass", ".ttml", ".srv3", ".srv2", ".srv1", ".json3", 
+            ".jpg", ".jpeg", ".webp", ".png", 
+            ".vtt", ".srt", ".ass", ".ssa", ".ttml", ".srv3", ".srv2", ".srv1", ".json3", 
             ".info.json", ".description"
         ]
+
+        stems: set[str] = set()
+
+        tmpl = self._task.assigned_template or self._task.output_template
+        if tmpl:
+            try:
+                with yt_dlp.YoutubeDL({"outtmpl": tmpl, "quiet": True}) as ydl:
+                    prepared = ydl.prepare_filename({
+                        "title": self._task.title,
+                        "uploader": self._task.video_info.channel if self._task.video_info else self._task.title,
+                        "channel": self._task.video_info.channel if self._task.video_info else self._task.title,
+                        "id": "",
+                        "resolution": "",
+                        "format_id": self._task.selected_format_id or "best",
+                        "ext": "CHKEXT",
+                    })
+                    if prepared.endswith(".CHKEXT"):
+                        stems.add(prepared[:-7])
+            except Exception:
+                pass
 
         for f in self._files_to_clean:
             base = f
@@ -139,9 +171,17 @@ class DownloadWorker(QThread):
                     pass
             
             base_no_ext = os.path.splitext(base)[0]
+            stems.add(base_no_ext)
+            clean_stem = re.sub(r'(\.f[a-zA-Z0-9_\-]+|\.temp)$', '', base_no_ext)
+            stems.add(clean_stem)
+
+        for stem in stems:
+            if not stem:
+                continue
             try:
-                for match in glob.glob(glob.escape(base_no_ext) + ".*"):
-                    if any(match.lower().endswith(ext) for ext in safe_exts):
+                for match in glob.glob(glob.escape(stem) + ".*"):
+                    low = match.lower()
+                    if any(low.endswith(ext) for ext in safe_exts) or low.endswith(".part") or low.endswith(".ytdl") or ".temp." in low:
                         if os.path.exists(match):
                             os.remove(match)
             except OSError:

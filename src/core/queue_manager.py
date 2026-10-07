@@ -232,7 +232,7 @@ class QueueManager(QObject):
         if worker:
             worker.cancel()
         task = self._tasks.get(task_id)
-        if task:
+        if task and task.status != DownloadStatus.DONE:
             task.status = DownloadStatus.CANCELLED
             self.task_updated.emit(task_id, task)
             self._save_tasks()
@@ -243,7 +243,7 @@ class QueueManager(QObject):
                         base = base[:-5]
                     if base.endswith(".ytdl"):
                         base = base[:-5]
-                    for ext in ["", ".part", ".ytdl"]:
+                    for ext in [".part", ".ytdl"]:
                         p = base + ext
                         if os.path.exists(p):
                             try:
@@ -254,7 +254,9 @@ class QueueManager(QObject):
                 pass
 
     def remove_task(self, task_id: str) -> None:
-        self.cancel_task(task_id)
+        worker = self._workers.get(task_id)
+        if worker and worker.isRunning():
+            worker.cancel()
         self._tasks.pop(task_id, None)
         if task_id in self._order:
             self._order.remove(task_id)
