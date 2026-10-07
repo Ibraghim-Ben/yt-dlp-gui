@@ -85,6 +85,8 @@ def run() -> int:
 
     queue = QueueManager(config)
     window = MainWindow(config, queue)
+    if icon_path:
+        window.setWindowIcon(QIcon(icon_path))
     window.show()
 
     return app.exec()

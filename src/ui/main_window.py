@@ -2,7 +2,7 @@ from __future__ import annotations
 import base64
 from typing import Optional
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QSplitter,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QSplitter,
     QStatusBar, QToolBar, QMessageBox, QFrame, QLabel, QDialog, QPushButton,
 )
 from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent, QObject
@@ -42,6 +42,8 @@ class MainWindow(QMainWindow):
         self._current_video: Optional[VideoInfo] = None
 
         self.setWindowTitle("yt-dlp GUI")
+        if not QApplication.windowIcon().isNull():
+            self.setWindowIcon(QApplication.windowIcon())
         self.setMinimumSize(960, 640)
         self.setAcceptDrops(True)
         self.installEventFilter(self)
