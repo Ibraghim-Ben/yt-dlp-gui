@@ -36,13 +36,13 @@ python run_gui.py
 Or after install:
 
 ```bash
-ytdlp-gui
+yt-dlp-gui
 ```
 
 ## Build (Windows exe)
 
 ```bash
-pyinstaller ytdlp-gui.spec
+pyinstaller yt-dlp-gui.spec
 ```
 
 ## Dependencies
