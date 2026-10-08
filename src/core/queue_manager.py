@@ -10,7 +10,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 if TYPE_CHECKING:
     from ..utils.config import Config
 from .models import DownloadTask, DownloadStatus
-from .worker import DownloadWorker
+from .worker import DownloadWorker, StreamlinkWorker, is_twitch_live_url, find_streamlink
 from .downloader import build_ydl_opts
 from .ffmpeg_utils import find_ffmpeg
 
@@ -25,7 +25,7 @@ class QueueManager(QObject):
         super().__init__(parent)
         self._config = config
         self._tasks: dict[str, DownloadTask] = {}
-        self._workers: dict[str, DownloadWorker] = {}
+        self._workers: dict[str, DownloadWorker | StreamlinkWorker] = {}
         self._order: list[str] = []
         self._in_flight_templates: set[str] = set()
         self._load_tasks()
@@ -469,7 +469,19 @@ class QueueManager(QObject):
             live_from_start=task.live_from_start,
         )
 
-        worker = DownloadWorker(task, ydl_opts)
+        sl_path = find_streamlink() if task.is_live and is_twitch_live_url(task.url) else None
+
+        if sl_path:
+            if task.mode == "audio":
+                quality = "audio_only"
+            elif task.selected_format_id:
+                quality = task.selected_format_id
+            else:
+                quality = "best"
+            worker = StreamlinkWorker(task, sl_path, quality=quality)
+        else:
+            worker = DownloadWorker(task, ydl_opts)
+
         worker.progress_updated.connect(self._on_progress)
         worker.status_changed.connect(self._on_status)
         worker.log_message.connect(lambda lvl, msg: self.log_message.emit(lvl, msg))

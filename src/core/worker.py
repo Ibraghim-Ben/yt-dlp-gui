@@ -261,14 +261,9 @@ class DownloadWorker(QThread):
         self._stopping_live = True
         self._cancelled = True
         self._paused = False
-        # For live streams yt-dlp spawns an external ffmpeg process that
-        # ignores progress hooks.  Kill it so yt-dlp returns with
-        # DownloadCancelled and we can finalize the recording.
         self._kill_child_ffmpeg()
 
     def _kill_child_ffmpeg(self) -> None:
-        """Kill only the ffmpeg child processes spawned by THIS specific worker."""
-        # 1. Kill directly tracked subprocesses spawned in this worker thread
         killed_tracked = False
         if self._thread_ident:
             with _subproc_lock:
@@ -283,7 +278,6 @@ class DownloadWorker(QThread):
         if killed_tracked:
             return
 
-        # 2. Fallback if subprocess was detached:
         if os.name == "nt":
             import ctypes
             from ctypes import wintypes
@@ -383,7 +377,6 @@ class DownloadWorker(QThread):
         if not os.path.isfile(probe_bin):
             probe_bin = ""
 
-        # Gather media candidates and thumbnail candidates
         media_candidates: list[str] = []
         thumb_candidates: list[str] = []
 
@@ -416,7 +409,6 @@ class DownloadWorker(QThread):
         if not media_candidates:
             return None
 
-        # Helper to inspect stream types (has_video, has_audio)
         def inspect_streams(path: str) -> tuple[bool, bool]:
             cmd = [probe_bin or ffmpeg_bin, path] if probe_bin else [ffmpeg_bin, "-i", path]
             try:
@@ -428,7 +420,6 @@ class DownloadWorker(QThread):
             except Exception:
                 return (False, False)
 
-        # Categorize candidates into video-only, audio-only, or pre-muxed (both)
         video_files: list[str] = []
         audio_files: list[str] = []
         muxed_files: list[str] = []
@@ -442,14 +433,12 @@ class DownloadWorker(QThread):
             elif has_a:
                 audio_files.append(f)
 
-        # Sort each list by size descending
         video_files.sort(key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0, reverse=True)
         audio_files.sort(key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0, reverse=True)
         muxed_files.sort(key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0, reverse=True)
 
         target_ext = (self._task.target_ext or ("mp3" if self._task.mode == "audio" else "mp4")).lstrip(".").lower()
 
-        # Determine primary file for output naming
         primary_file = (
             muxed_files[0] if muxed_files
             else (video_files[0] if (video_files and self._task.mode != "audio")
@@ -460,12 +449,10 @@ class DownloadWorker(QThread):
         if base.endswith(".part"): base = base[:-5]
         if base.endswith(".ytdl"): base = base[:-5]
         base_no_ext = os.path.splitext(base)[0]
-        # Remove stream format tags like .f232, .f247, .f299 if present
         base_no_ext = re.sub(r'(\.f[a-zA-Z0-9_\-]+|\.temp)$', '', base_no_ext)
         target_file = f"{base_no_ext}.{target_ext}"
         temp_target = f"{base_no_ext}.finalizing.{target_ext}"
 
-        # Prepare thumbnail if available and user requested embedding
         thumb_jpg: Optional[str] = None
         orig_thumb: Optional[str] = None
         if self._task.embed_thumbnail and thumb_candidates and target_ext in ("mp4", "mkv", "m4a", "mp3"):
@@ -475,7 +462,6 @@ class DownloadWorker(QThread):
                 if raw_thumb.lower().endswith((".jpg", ".jpeg")):
                     thumb_jpg = raw_thumb
                 else:
-                    # Convert webp/png to temporary jpg for clean MP4 cover art embedding
                     temp_jpg = f"{base_no_ext}.thumb_temp.jpg"
                     try:
                         res = subprocess.run(
@@ -488,7 +474,6 @@ class DownloadWorker(QThread):
                     except Exception:
                         pass
 
-        # Case 1: We have both a separate video part and a separate audio part -> MERGE THEM!
         if video_files and audio_files and self._task.mode != "audio":
             vid = video_files[0]
             aud = audio_files[0]
@@ -533,7 +518,6 @@ class DownloadWorker(QThread):
             except Exception:
                 pass
 
-        # Case 2: We have a muxed file (contains both video and audio) or single file
         source_file = muxed_files[0] if muxed_files else primary_file
         cmd = [ffmpeg_bin, "-y", "-i", source_file]
         if thumb_jpg and os.path.exists(thumb_jpg) and target_ext == "mp4":
@@ -575,17 +559,14 @@ class DownloadWorker(QThread):
         except Exception:
             pass
 
-        # Clean up temporary thumbnail if created
         if thumb_jpg and thumb_jpg != orig_thumb and os.path.exists(thumb_jpg):
             try: os.remove(thumb_jpg)
             except OSError: pass
 
-        # Clean up temp_target if failed
         if os.path.exists(temp_target):
             try: os.remove(temp_target)
             except OSError: pass
 
-        # Fallback: rename primary_file directly so downloaded data is never lost
         try:
             if os.path.exists(target_file) and os.path.abspath(primary_file) != os.path.abspath(target_file):
                 try: os.remove(target_file)
@@ -618,4 +599,246 @@ class DownloadWorker(QThread):
         except Exception:
             pass
         return best_file
+
+
+def is_twitch_live_url(url: str) -> bool:
+    clean = url.strip().split("?")[0].split("#")[0].rstrip("/")
+    m = re.match(r'^https?://(?:(?:www|m)\.)?twitch\.tv/([a-zA-Z0-9_]+)$', clean, re.IGNORECASE)
+    if not m:
+        return False
+    reserved = {"directory", "downloads", "jobs", "turbo", "prime", "videos", "clips", "p", "login", "signup", "settings"}
+    return m.group(1).lower() not in reserved
+
+
+def find_streamlink() -> Optional[str]:
+    import shutil
+    import sys
+    found = shutil.which("streamlink") or shutil.which("streamlink.exe")
+    if found:
+        return found
+    scripts_dir = os.path.join(os.path.dirname(sys.executable), "Scripts")
+    cand = os.path.join(scripts_dir, "streamlink.exe")
+    if os.path.isfile(cand):
+        return cand
+    cand2 = os.path.join(os.path.dirname(sys.executable), "streamlink.exe")
+    if os.path.isfile(cand2):
+        return cand2
+    for p in (
+        r"C:\Program Files\Streamlink\bin\streamlink.exe",
+        r"C:\Program Files (x86)\Streamlink\bin\streamlink.exe",
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Streamlink\bin\streamlink.exe"),
+    ):
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+class StreamlinkWorker(QThread):
+    progress_updated = pyqtSignal(str, float, str, str, str)
+    status_changed = pyqtSignal(str, str)
+    log_message = pyqtSignal(str, str)
+    download_finished = pyqtSignal(str, str, str)
+    errored = pyqtSignal(str, str)
+
+    def __init__(self, task: DownloadTask, streamlink_path: str, quality: str = "best"):
+        super().__init__()
+        self._task = task
+        self._streamlink_path = streamlink_path
+        self._quality = quality
+        self._cancelled = False
+        self._stopping = False
+        self._proc: Optional[subprocess.Popen] = None
+        self._output_file: str = ""
+
+    def run(self) -> None:
+        ident = threading.current_thread().ident
+        with _subproc_lock:
+            _worker_subprocs[ident] = set()
+
+        self.status_changed.emit(self._task.id, DownloadStatus.DOWNLOADING.name)
+
+        try:
+            import time
+
+            if self._task.output_dir:
+                os.makedirs(self._task.output_dir, exist_ok=True)
+
+            clean_title = re.sub(r'[\\/:"*?<>|]', '_', self._task.title).strip()[:80] or "stream"
+            ts_file = os.path.join(self._task.output_dir, f"{clean_title}.ts")
+            n = 2
+            while os.path.exists(ts_file):
+                ts_file = os.path.join(self._task.output_dir, f"{clean_title} [{n}].ts")
+                n += 1
+
+            self._output_file = ts_file
+
+            stream_qual = self._quality if self._quality else "best"
+            if stream_qual != "best" and "," not in stream_qual:
+                stream_qual = f"{stream_qual},best"
+
+            cmd = [
+                self._streamlink_path,
+                "--twitch-disable-ads",
+                "--output", ts_file,
+                "--force",
+                self._task.url,
+                stream_qual,
+            ]
+
+            self.log_message.emit("info", f"[streamlink] {self._task.url} → {os.path.basename(ts_file)}")
+
+            cflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            proc = _orig_popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=cflags,
+            )
+            self._proc = proc
+            with _subproc_lock:
+                if ident in _worker_subprocs:
+                    _worker_subprocs[ident].add(proc)
+
+            bytes_pattern = re.compile(r'Written\s+([\d.]+)\s*([KMGT]?B)', re.IGNORECASE)
+            speed_pattern = re.compile(r'([\d.]+)\s*([KMGT]?B)/s', re.IGNORECASE)
+            total_bytes = 0.0
+            last_emit = time.monotonic()
+
+            for line in proc.stdout:
+                line = line.rstrip()
+                if not line:
+                    continue
+                self.log_message.emit("debug", f"[streamlink] {line}")
+
+                m_bytes = bytes_pattern.search(line)
+                if m_bytes:
+                    val = float(m_bytes.group(1))
+                    unit = m_bytes.group(2).upper()
+                    mult = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+                    total_bytes = val * mult.get(unit, 1)
+
+                speed_str = ""
+                m_speed = speed_pattern.search(line)
+                if m_speed:
+                    sv = float(m_speed.group(1))
+                    su = m_speed.group(2).upper()
+                    mult = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+                    bps = sv * mult.get(su, 1)
+                    if bps >= 1024**2:
+                        speed_str = f"{bps/1024**2:.1f} MiB/s"
+                    elif bps >= 1024:
+                        speed_str = f"{bps/1024:.1f} KiB/s"
+                    else:
+                        speed_str = f"{bps:.0f} B/s"
+
+                now = time.monotonic()
+                if now - last_emit >= 0.5:
+                    last_emit = now
+                    if total_bytes >= 1024**3:
+                        size_str = f"{total_bytes/1024**3:.2f} GiB"
+                    elif total_bytes >= 1024**2:
+                        size_str = f"{total_bytes/1024**2:.1f} MiB"
+                    elif total_bytes >= 1024:
+                        size_str = f"{total_bytes/1024:.0f} KiB"
+                    else:
+                        size_str = ""
+                    self.progress_updated.emit(
+                        self._task.id, 0.0, speed_str, size_str,
+                        ts_file if os.path.exists(ts_file) else ""
+                    )
+
+            proc.wait()
+            returncode = proc.returncode
+
+            if self._cancelled:
+                self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
+                self._cleanup_partial_files()
+                return
+
+            ts_ok = os.path.exists(ts_file) and os.path.getsize(ts_file) > 0
+            if self._stopping or returncode == 0 or ts_ok:
+                self.status_changed.emit(self._task.id, DownloadStatus.PROCESSING.name)
+                self.log_message.emit("info", "[streamlink] Converting .ts → .mp4…")
+                final = self._convert_ts(ts_file)
+                if final and os.path.exists(final) and os.path.getsize(final) > 0:
+                    self.download_finished.emit(self._task.id, self._task.output_dir, final)
+                elif ts_ok:
+                    self.download_finished.emit(self._task.id, self._task.output_dir, ts_file)
+                else:
+                    self.errored.emit(self._task.id, "streamlink: no output file produced")
+            else:
+                self.errored.emit(self._task.id, f"streamlink exited with code {returncode}")
+
+        except Exception as exc:
+            if not self._cancelled:
+                self.errored.emit(self._task.id, str(exc))
+            else:
+                self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
+        finally:
+            with _subproc_lock:
+                _worker_subprocs.pop(ident, None)
+
+    def _convert_ts(self, ts_path: str) -> Optional[str]:
+        from .ffmpeg_utils import find_ffmpeg
+        ffmpeg_bin = find_ffmpeg()
+        if not ffmpeg_bin or not os.path.exists(ts_path):
+            return None
+        mp4_path = ts_path.rsplit(".", 1)[0] + ".mp4"
+        cflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        try:
+            proc = _orig_popen(
+                [ffmpeg_bin, "-y", "-i", ts_path, "-c", "copy", mp4_path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=cflags,
+            )
+            self._proc = proc
+            proc.wait(timeout=300)
+            if self._cancelled:
+                self._try_remove(mp4_path)
+                return None
+            if proc.returncode == 0 and os.path.exists(mp4_path) and os.path.getsize(mp4_path) > 0:
+                try:
+                    os.remove(ts_path)
+                except OSError:
+                    pass
+                return mp4_path
+        except Exception:
+            pass
+        return None
+
+    def stop_and_save(self) -> None:
+        self._stopping = True
+        self._terminate_proc()
+
+    def cancel(self) -> None:
+        self._cancelled = True
+        self._terminate_proc()
+
+    def _terminate_proc(self) -> None:
+        proc = self._proc
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+
+    def _try_remove(self, path: str) -> None:
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def _cleanup_partial_files(self) -> None:
+        if self._output_file:
+            self._try_remove(self._output_file)
+            mp4_file = self._output_file.rsplit(".", 1)[0] + ".mp4"
+            self._try_remove(mp4_file)
+
+    def pause(self) -> None:
+        pass
 
