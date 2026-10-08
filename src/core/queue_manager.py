@@ -64,6 +64,8 @@ class QueueManager(QObject):
                     "file_path": task.file_path,
                     "thumbnail_url": task.thumbnail_url,
                     "assigned_template": task.assigned_template,
+                    "is_live": getattr(task, "is_live", False),
+                    "live_from_start": getattr(task, "live_from_start", True),
                 }
                 data.append(task_dict)
             
@@ -111,6 +113,8 @@ class QueueManager(QObject):
                         file_path=task_dict.get("file_path", ""),
                         thumbnail_url=task_dict.get("thumbnail_url", ""),
                         assigned_template=task_dict.get("assigned_template"),
+                        is_live=task_dict.get("is_live", False),
+                        live_from_start=task_dict.get("live_from_start", True),
                     )
                     self._tasks[task.id] = task
                     self._order.append(task.id)
@@ -135,6 +139,8 @@ class QueueManager(QObject):
         subs_langs: str = "en",
         embed_thumbnail: bool = True,
         embed_metadata: bool = True,
+        is_live: bool = False,
+        live_from_start: bool = True,
     ) -> DownloadTask:
         for tid in self._order:
             existing = self._tasks.get(tid)
@@ -174,6 +180,8 @@ class QueueManager(QObject):
             embed_thumbnail=embed_thumbnail,
             embed_metadata=embed_metadata,
             thumbnail_url=video_info.thumbnail if video_info else "",
+            is_live=is_live,
+            live_from_start=live_from_start,
         )
         self._tasks[task_id] = task
         self._order.append(task_id)
@@ -297,6 +305,16 @@ class QueueManager(QObject):
                                     pass
             except Exception:
                 pass
+
+    def stop_live_task(self, task_id: str) -> None:
+        task = self._tasks.get(task_id)
+        if task and task.status != DownloadStatus.DONE:
+            task.status = DownloadStatus.PROCESSING
+            self.task_updated.emit(task_id, task)
+            self._save_tasks()
+        worker = self._workers.get(task_id)
+        if worker and worker.isRunning():
+            worker.stop_and_save()
 
     def cancel_task(self, task_id: str) -> None:
         worker = self._workers.get(task_id)
@@ -447,6 +465,8 @@ class QueueManager(QObject):
             manual_sub_langs=task.video_info.manual_subtitle_langs if task.video_info else frozenset(),
             archive_file=cfg.download_archive or None,
             log_callback=lambda lvl, msg: self.log_message.emit(lvl, msg),
+            is_live=task.is_live,
+            live_from_start=task.live_from_start,
         )
 
         worker = DownloadWorker(task, ydl_opts)

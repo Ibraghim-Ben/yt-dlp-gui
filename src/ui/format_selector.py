@@ -282,7 +282,7 @@ class FormatFilterProxy(QSortFilterProxyModel):
 
 
 class FormatSelector(QWidget):
-    download_requested = pyqtSignal(object, object, str, str, bool, str, bool, bool, str)
+    download_requested = pyqtSignal(object, object, str, str, bool, str, bool, bool, str, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -308,12 +308,52 @@ class FormatSelector(QWidget):
         self._thumb_label.setVisible(False)
         info_row.addWidget(self._thumb_label)
 
+        info_text_layout = QVBoxLayout()
+        info_text_layout.setSpacing(4)
+        info_text_layout.setContentsMargins(0, 2, 0, 2)
+
         self._info_label = QLabel("No video loaded")
         self._info_label.setObjectName("infoLabel")
         self._info_label.setWordWrap(True)
-        self._info_label.setMinimumHeight(24)
+        self._info_label.setMinimumHeight(20)
         self._info_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        info_row.addWidget(self._info_label, 1)
+        info_text_layout.addWidget(self._info_label)
+
+        meta_layout = QHBoxLayout()
+        meta_layout.setSpacing(6)
+        meta_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._channel_label = QLabel()
+        self._channel_label.setObjectName("channelLabel")
+        meta_layout.addWidget(self._channel_label)
+
+        self._meta_sep_label = QLabel("•")
+        self._meta_sep_label.setVisible(False)
+        meta_layout.addWidget(self._meta_sep_label)
+
+        self._duration_label = QLabel()
+        self._duration_label.setObjectName("durationLabel")
+        self._duration_label.setVisible(False)
+        meta_layout.addWidget(self._duration_label)
+
+        self._live_badge = QLabel("LIVE")
+        self._live_badge.setObjectName("liveBadge")
+        self._live_badge.setStyleSheet(
+            "background-color: #e64553;"
+            "color: #ffffff;"
+            "border-radius: 3px;"
+            "padding: 1px 6px;"
+            "font-size: 8pt;"
+            "font-weight: bold;"
+        )
+        self._live_badge.setFixedHeight(18)
+        self._live_badge.setVisible(False)
+        meta_layout.addWidget(self._live_badge)
+
+        meta_layout.addStretch()
+        info_text_layout.addLayout(meta_layout)
+
+        info_row.addLayout(info_text_layout, 1)
 
         root.addLayout(info_row)
 
@@ -372,6 +412,12 @@ class FormatSelector(QWidget):
         options_layout.addWidget(self._embed_meta_cb)
         options_layout.addWidget(self._subs_cb)
         options_layout.addWidget(self._subs_lang_cb)
+
+        self._live_dvr_cb = QCheckBox("From start (DVR)")
+        self._live_dvr_cb.setChecked(True)
+        self._live_dvr_cb.setVisible(False)
+        self._live_dvr_cb.setToolTip("Record live stream from beginning (DVR buffer)")
+        options_layout.addWidget(self._live_dvr_cb)
 
         self._audio_fmt_label = QLabel("Convert to:")
         self._audio_fmt_cb = QComboBox()
@@ -457,13 +503,27 @@ class FormatSelector(QWidget):
         self._video_info = video_info
         self._folder_edit.setText(output_dir)
 
-        dur = video_info.display_duration
         ch = video_info.channel or ""
         subtitle_color = get_theme_color_hex("subtitleText")
-        self._info_label.setText(
-            f"<b>{video_info.title}</b><br>"
-            f"<span style='color:{subtitle_color}'>{ch}  •  {dur}</span>"
-        )
+        self._channel_label.setStyleSheet(f"color: {subtitle_color};")
+        self._channel_label.setText(ch)
+        self._channel_label.setVisible(bool(ch))
+
+        self._meta_sep_label.setStyleSheet(f"color: {subtitle_color};")
+        self._meta_sep_label.setVisible(bool(ch and (video_info.is_live or video_info.display_duration)))
+
+        if video_info.is_live:
+            self._duration_label.setVisible(False)
+            self._live_badge.setVisible(True)
+            self._live_dvr_cb.setVisible(True)
+        else:
+            self._live_badge.setVisible(False)
+            self._duration_label.setStyleSheet(f"color: {subtitle_color};")
+            self._duration_label.setText(video_info.display_duration or "")
+            self._duration_label.setVisible(bool(video_info.display_duration))
+            self._live_dvr_cb.setVisible(False)
+
+        self._info_label.setText(f"<b>{video_info.title}</b>")
 
         if video_info.thumbnail:
             self._load_thumbnail(video_info.thumbnail)
@@ -478,30 +538,40 @@ class FormatSelector(QWidget):
         self._proxy.setSourceModel(self._model)
         self._apply_mode_to_proxy()
         
-        self._subs_lang_cb.clear()
-        self._subs_lang_cb.addItem("All", "all")
-        if video_info.subtitles:
-            default_index = -1
-            for lang_code, lang_name in video_info.subtitles:
-                if lang_name == lang_code:
-                    display = lang_code
-                elif f"({lang_code})" in lang_name:
-                    display = lang_name
-                else:
-                    display = f"{lang_name} ({lang_code})"
-                self._subs_lang_cb.addItem(display, lang_code)
-                if default_index < 0 and lang_code.lower().startswith("en"):
-                    default_index = self._subs_lang_cb.count() - 1
-            if default_index >= 0:
-                self._subs_lang_cb.setCurrentIndex(default_index)
-            elif self._subs_lang_cb.count() > 1:
-                self._subs_lang_cb.setCurrentIndex(1)
-            self._update_subs_combo_width()
-            self._subs_cb.setEnabled(True)
-        else:
-            self._update_subs_combo_width()
+        if video_info.is_live:
             self._subs_cb.setEnabled(False)
             self._subs_cb.setChecked(False)
+            self._subs_cb.setToolTip("Subtitles not available for live streams")
+            self._subs_lang_cb.setEnabled(False)
+            self._subs_lang_cb.clear()
+            self._subs_lang_cb.addItem("Unavailable for live", "")
+            self._update_subs_combo_width()
+        else:
+            self._subs_cb.setToolTip("")
+            self._subs_lang_cb.clear()
+            self._subs_lang_cb.addItem("All", "all")
+            if video_info.subtitles:
+                default_index = -1
+                for lang_code, lang_name in video_info.subtitles:
+                    if lang_name == lang_code:
+                        display = lang_code
+                    elif f"({lang_code})" in lang_name:
+                        display = lang_name
+                    else:
+                        display = f"{lang_name} ({lang_code})"
+                    self._subs_lang_cb.addItem(display, lang_code)
+                    if default_index < 0 and lang_code.lower().startswith("en"):
+                        default_index = self._subs_lang_cb.count() - 1
+                if default_index >= 0:
+                    self._subs_lang_cb.setCurrentIndex(default_index)
+                elif self._subs_lang_cb.count() > 1:
+                    self._subs_lang_cb.setCurrentIndex(1)
+                self._update_subs_combo_width()
+                self._subs_cb.setEnabled(True)
+            else:
+                self._update_subs_combo_width()
+                self._subs_cb.setEnabled(False)
+                self._subs_cb.setChecked(False)
 
     def _update_subs_combo_width(self) -> None:
         text = self._subs_lang_cb.currentText()
@@ -521,7 +591,15 @@ class FormatSelector(QWidget):
         self._thumb_label.clear_pixmap()
         self._thumb_label.setVisible(False)
         self._info_label.setText("No video loaded")
+        self._channel_label.setText("")
+        self._channel_label.setVisible(False)
+        self._meta_sep_label.setVisible(False)
+        self._duration_label.setText("")
+        self._duration_label.setVisible(False)
+        self._live_badge.setVisible(False)
         self._download_btn.setEnabled(False)
+        self._live_dvr_cb.setVisible(False)
+        self._subs_cb.setToolTip("")
         self._subs_lang_cb.clear()
         self._update_subs_combo_width()
         self._subs_cb.setEnabled(False)
@@ -614,6 +692,7 @@ class FormatSelector(QWidget):
         if not selected_fmt and mode != "audio":
             return
 
+        live_from_start = self._live_dvr_cb.isChecked() if (self._video_info and self._video_info.is_live) else True
         self.download_requested.emit(
             selected_fmt,
             audio_fmt,
@@ -624,4 +703,5 @@ class FormatSelector(QWidget):
             self._embed_thumb_cb.isChecked(),
             self._embed_meta_cb.isChecked(),
             self._audio_fmt_cb.currentData() if mode == "audio" else "",
+            live_from_start,
         )

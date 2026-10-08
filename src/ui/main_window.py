@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
         self._dl_queue.pause_requested.connect(self._queue.pause_task)
         self._dl_queue.resume_requested.connect(self._queue.resume_task)
         self._dl_queue.cancel_requested.connect(self._queue.cancel_task)
+        self._dl_queue.stop_live_requested.connect(self._queue.stop_live_task)
         self._dl_queue.remove_requested.connect(self._queue.remove_task)
         self._main_splitter.addWidget(self._dl_queue)
 
@@ -256,6 +257,7 @@ class MainWindow(QMainWindow):
         embed_thumbnail: bool = True,
         embed_metadata: bool = True,
         audio_format_ext: str = "",
+        live_from_start: bool = True,
     ) -> None:
         if not self._current_video:
             return
@@ -279,6 +281,8 @@ class MainWindow(QMainWindow):
             subs_langs=subs_langs,
             embed_thumbnail=embed_thumbnail,
             embed_metadata=embed_metadata,
+            is_live=self._current_video.is_live,
+            live_from_start=live_from_start,
         )
         self._status.showMessage(f"Added to queue: {self._current_video.title}")
 

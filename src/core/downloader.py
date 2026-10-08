@@ -27,17 +27,17 @@ class _YTDLPLogger:
 def _classify_media_type(fmt: dict) -> Optional[MediaType]:
     vcodec = fmt.get("vcodec")
     acodec = fmt.get("acodec")
-    
+    resolution = str(fmt.get("resolution") or "").lower()
+    format_note = str(fmt.get("format_note") or "").lower()
+
+    if resolution == "audio only" or "audio only" in format_note or vcodec == "none":
+        return MediaType.AUDIO_ONLY
+
+    if acodec == "none":
+        return MediaType.VIDEO_ONLY
+
     has_video = bool(vcodec) and vcodec != "none"
     has_audio = bool(acodec) and acodec != "none"
-
-    if not has_video and not has_audio:
-        ext = fmt.get("ext", "").lower()
-        if ext in ("mp4", "mkv", "webm", "mov", "avi", "flv"):
-            return MediaType.VIDEO
-        if ext in ("mp3", "m4a", "ogg", "opus", "wav", "flac"):
-            return MediaType.AUDIO_ONLY
-        return None
 
     if has_video and has_audio:
         return MediaType.VIDEO
@@ -45,6 +45,12 @@ def _classify_media_type(fmt: dict) -> Optional[MediaType]:
         return MediaType.VIDEO_ONLY
     if has_audio:
         return MediaType.AUDIO_ONLY
+
+    ext = fmt.get("ext", "").lower()
+    if ext in ("mp3", "m4a", "ogg", "opus", "wav", "flac"):
+        return MediaType.AUDIO_ONLY
+    if ext in ("mp4", "mkv", "webm", "mov", "avi", "flv"):
+        return MediaType.VIDEO
     return None
 
 
@@ -207,6 +213,9 @@ def _parse_video_info(info: dict, original_url: str) -> VideoInfo:
     auto_orig.sort(key=lambda x: x[1].lower())
 
     subtitles = manual_subs + auto_orig
+    is_live = bool(info.get("is_live") or info.get("live_status") == "is_live")
+    if is_live:
+        subtitles = []
 
     return VideoInfo(
         url=original_url,
@@ -221,6 +230,7 @@ def _parse_video_info(info: dict, original_url: str) -> VideoInfo:
         playlist_entries=entries,
         subtitles=subtitles,
         manual_subtitle_langs=frozenset(subs_dict.keys()),
+        is_live=is_live,
     )
 
 
@@ -320,6 +330,8 @@ def build_ydl_opts(
     manual_sub_langs: frozenset = frozenset(),
     archive_file: Optional[str] = None,
     log_callback: Callable[[str, str], None],
+    is_live: bool = False,
+    live_from_start: bool = True,
 ) -> dict:
     setup_bundled_binaries()
 
@@ -332,6 +344,10 @@ def build_ydl_opts(
         "fragment_retries": 5,
         "color": "no_color",
     }
+
+    if is_live:
+        opts["live_from_start"] = live_from_start
+        opts["hls_use_mpegts"] = True
 
     qjs_exe = find_quickjs()
     if qjs_exe:
@@ -355,7 +371,17 @@ def build_ydl_opts(
     if archive_file:
         opts["download_archive"] = archive_file
 
-    if selected_format_id:
+    if is_live:
+        if mode == "audio":
+            opts["format"] = f"{selected_format_id}" if selected_format_id else "bestaudio/best"
+        elif selected_format_id:
+            if audio_format_id:
+                opts["format"] = f"{selected_format_id}+{audio_format_id}/bestvideo*+bestaudio/best"
+            else:
+                opts["format"] = f"{selected_format_id}+bestaudio/bestvideo*+bestaudio/best"
+        else:
+            opts["format"] = "bestvideo*+bestaudio/best"
+    elif selected_format_id:
         if audio_format_id:
             opts["format"] = f"{selected_format_id}+{audio_format_id}"
         else:

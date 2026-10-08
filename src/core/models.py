@@ -156,9 +156,12 @@ class VideoInfo:
     subtitles: list[tuple[str, str]] = field(default_factory=list)
     manual_subtitle_langs: frozenset = field(default_factory=frozenset)
     auth_required: bool = False  # True if cookies were needed to access this URL
+    is_live: bool = False
 
     @property
     def display_duration(self) -> str:
+        if self.is_live:
+            return "● LIVE"
         res = format_duration(self.duration)
         return res if res else "—"
 
@@ -187,3 +190,5 @@ class DownloadTask:
     file_path: str = ""
     thumbnail_url: str = ""
     assigned_template: Optional[str] = None
+    is_live: bool = False
+    live_from_start: bool = True

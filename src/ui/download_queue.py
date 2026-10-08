@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QLabel, QProgressBar, QPushButton, QSizePolicy, QMessageBox, QApplication,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QPointF, QRectF
+from PyQt6.QtCore import Qt, pyqtSignal, QPointF, QRectF, QSize
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
 from ..core.models import DownloadTask, DownloadStatus
 
@@ -109,6 +109,7 @@ class TaskItemWidget(QWidget):
     resume_clicked = pyqtSignal(str)
     cancel_clicked = pyqtSignal(str)
     remove_clicked = pyqtSignal(str)
+    stop_live_clicked = pyqtSignal(str)
 
     def __init__(self, task: DownloadTask, parent=None):
         super().__init__(parent)
@@ -117,15 +118,19 @@ class TaskItemWidget(QWidget):
         self._status = task.status
         self._file_path = task.file_path
         self._output_dir = task.output_dir
+        self._is_live = getattr(task, "is_live", False)
         self._build_ui(task)
 
     @property
     def status(self) -> DownloadStatus:
         return self._status
 
+    def sizeHint(self) -> QSize:
+        return QSize(200, 76)
+
     def _build_ui(self, task: DownloadTask) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 8, 10, 8)
+        root.setContentsMargins(12, 8, 12, 10)
         root.setSpacing(4)
 
         top = QHBoxLayout()
@@ -140,8 +145,7 @@ class TaskItemWidget(QWidget):
 
         self._status_label = QLabel()
         self._status_label.setObjectName("taskStatus")
-        self._status_label.setFixedWidth(100)
-        self._status_label.setFixedHeight(18)
+        self._status_label.setFixedWidth(90)
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(self._status_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -179,7 +183,22 @@ class TaskItemWidget(QWidget):
         root.addWidget(self._progress)
 
         bot = QHBoxLayout()
-        bot.setSpacing(12)
+        bot.setSpacing(6)
+
+        self._live_badge = QLabel("LIVE")
+        self._live_badge.setObjectName("liveBadge")
+        self._live_badge.setStyleSheet(
+            "background-color: #e64553;"
+            "color: #ffffff;"
+            "border-radius: 3px;"
+            "padding: 0px 5px;"
+            "font-size: 8pt;"
+            "font-weight: bold;"
+        )
+        self._live_badge.setFixedHeight(16)
+        self._live_badge.setVisible(False)
+        bot.addWidget(self._live_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self._speed_label = QLabel()
         self._speed_label.setObjectName("taskSpeed")
         bot.addWidget(self._speed_label)
@@ -201,11 +220,22 @@ class TaskItemWidget(QWidget):
         self._status = task.status
         self._file_path = task.file_path
         self._output_dir = task.output_dir
+        self._is_live = getattr(task, "is_live", False)
         self._title_label.setText(task.title)
-        self._progress.setValue(int(task.progress))
 
-        label = _STATUS_LABELS.get(task.status, task.status.name)
-        self._status_label.setText(label)
+        is_live_recording = self._is_live and task.status == DownloadStatus.DOWNLOADING
+        is_live_saving = self._is_live and task.status == DownloadStatus.PROCESSING
+        if is_live_recording:
+            self._progress.setRange(0, 0)
+            self._status_label.setText("Recording…")
+        elif is_live_saving:
+            self._progress.setRange(0, 0)
+            self._status_label.setText("Saving…")
+        else:
+            self._progress.setRange(0, 100)
+            self._progress.setValue(int(task.progress))
+            label = _STATUS_LABELS.get(task.status, task.status.name)
+            self._status_label.setText(label)
         
         status_name = task.status.name.lower()
         self._status_label.setProperty("taskStatus", status_name)
@@ -216,14 +246,16 @@ class TaskItemWidget(QWidget):
         self._progress.style().unpolish(self._progress)
         self._progress.style().polish(self._progress)
 
-        if task.status == DownloadStatus.DOWNLOADING:
+        if task.status in (DownloadStatus.DOWNLOADING, DownloadStatus.PROCESSING):
+            self._live_badge.setVisible(self._is_live)
             parts = []
-            if task.speed:
+            if task.speed and task.status == DownloadStatus.DOWNLOADING:
                 parts.append(task.speed)
-            if task.eta:
+            if task.eta and not self._is_live and task.status == DownloadStatus.DOWNLOADING:
                 parts.append(f"ETA {task.eta}")
             self._speed_label.setText("  ".join(parts))
         else:
+            self._live_badge.setVisible(False)
             self._speed_label.setText("")
             self._eta_label.setText("")
 
@@ -237,7 +269,9 @@ class TaskItemWidget(QWidget):
         self._error_label.style().unpolish(self._error_label)
         self._error_label.style().polish(self._error_label)
 
-        if task.status == DownloadStatus.PAUSED:
+        if self._is_live and task.status == DownloadStatus.DOWNLOADING:
+            self._pause_btn.setVisible(False)
+        elif task.status == DownloadStatus.PAUSED:
             self._pause_btn.setVisible(True)
             self._pause_btn.setEnabled(True)
             self._pause_btn.set_icon_type("play")
@@ -259,9 +293,12 @@ class TaskItemWidget(QWidget):
         )
         is_processing = task.status == DownloadStatus.PROCESSING
         self._cancel_btn.setEnabled(not is_processing)
-        self._cancel_btn.setToolTip(
-            "Remove" if is_terminal else ("Processing…" if is_processing else "Cancel")
-        )
+        if self._is_live and task.status == DownloadStatus.DOWNLOADING:
+            self._cancel_btn.setToolTip("Stop & Save recording")
+        else:
+            self._cancel_btn.setToolTip(
+                "Remove" if is_terminal else ("Processing…" if is_processing else "Cancel")
+            )
 
     def _on_pause_toggle(self) -> None:
         if self._status == DownloadStatus.PAUSED:
@@ -287,6 +324,23 @@ class TaskItemWidget(QWidget):
     def _on_cancel(self) -> None:
         is_active = self._status not in (DownloadStatus.DONE, DownloadStatus.ERROR, DownloadStatus.CANCELLED)
         if is_active:
+            if self._is_live and self._status == DownloadStatus.DOWNLOADING:
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("Live Stream Recording")
+                msg_box.setText(f"Live stream recording in progress:\n\"{self._title_label.text()}\"")
+                msg_box.setInformativeText("Do you want to stop and save the recorded video, or discard it?")
+                save_btn = msg_box.addButton("Save Video", QMessageBox.ButtonRole.AcceptRole)
+                discard_btn = msg_box.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
+                cancel_btn = msg_box.addButton("Continue Recording", QMessageBox.ButtonRole.RejectRole)
+                msg_box.setDefaultButton(save_btn)
+                msg_box.exec()
+                clicked = msg_box.clickedButton()
+                if clicked == save_btn:
+                    self.stop_live_clicked.emit(self._task_id)
+                elif clicked == discard_btn:
+                    self.cancel_clicked.emit(self._task_id)
+                return
+
             reply = QMessageBox.question(
                 self,
                 "Cancel Download",
@@ -304,6 +358,7 @@ class DownloadQueue(QWidget):
     pause_requested = pyqtSignal(str)
     resume_requested = pyqtSignal(str)
     cancel_requested = pyqtSignal(str)
+    stop_live_requested = pyqtSignal(str)
     remove_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -346,6 +401,7 @@ class DownloadQueue(QWidget):
         widget.pause_clicked.connect(self.pause_requested)
         widget.resume_clicked.connect(self.resume_requested)
         widget.cancel_clicked.connect(self.cancel_requested)
+        widget.stop_live_clicked.connect(self.stop_live_requested)
         widget.remove_clicked.connect(self.remove_requested)
 
         item = QListWidgetItem()
@@ -364,6 +420,7 @@ class DownloadQueue(QWidget):
         if widget and item:
             widget.update_task(task)
             item.setSizeHint(widget.sizeHint())
+            self._list.doItemsLayout()
 
     def remove_task(self, task_id: str) -> None:
         item = self._task_items.pop(task_id, None)
