@@ -227,36 +227,101 @@ class QueueManager(QObject):
         else:
             self._try_start_next()
 
+    def _cleanup_task_files(self, task: DownloadTask) -> None:
+        import re
+
+        safe_exts = (
+            ".part", ".ytdl", ".webp", ".jpg", ".jpeg", ".png",
+            ".vtt", ".srt", ".ass", ".ssa", ".ttml", ".srv3", ".srv2", ".srv1",
+            ".json3", ".info.json", ".description", ".temp",
+        )
+        stems: set[str] = set()
+
+        if task.file_path:
+            base = task.file_path
+            if base.endswith(".part"):
+                base = base[:-5]
+            if base.endswith(".ytdl"):
+                base = base[:-5]
+            stems.add(base)
+            stems.add(os.path.splitext(base)[0])
+
+        for tmpl in (task.assigned_template, task.output_template):
+            if not tmpl:
+                continue
+            try:
+                import yt_dlp as _yt
+                uploader = (task.video_info.channel if task.video_info and task.video_info.channel else "") or task.title
+                with _yt.YoutubeDL({"outtmpl": tmpl, "quiet": True}) as ydl:
+                    candidate = ydl.prepare_filename({
+                        "title": task.title,
+                        "uploader": uploader,
+                        "channel": uploader,
+                        "id": "",
+                        "resolution": "",
+                        "format_id": task.selected_format_id or "best",
+                        "ext": "CHKEXT",
+                    })
+                    if candidate.endswith(".CHKEXT"):
+                        stems.add(candidate[:-7])
+            except Exception:
+                pass
+
+        for stem in stems:
+            if not stem:
+                continue
+            try:
+                for match in glob.glob(glob.escape(stem) + "*"):
+                    low = match.lower()
+                    if any(low.endswith(ext) for ext in safe_exts):
+                        if os.path.exists(match):
+                            try:
+                                os.remove(match)
+                            except OSError:
+                                pass
+            except Exception:
+                pass
+
+        if task.output_dir and os.path.isdir(task.output_dir) and task.title:
+            try:
+                clean_title = re.sub(r'[\\/*?:"<>|]', '_', task.title)
+                prefix = clean_title[:20].strip()
+                if prefix:
+                    for entry in os.scandir(task.output_dir):
+                        if entry.is_file():
+                            name = entry.name
+                            if name.startswith(prefix) and any(name.lower().endswith(ext) for ext in safe_exts):
+                                try:
+                                    os.remove(entry.path)
+                                except OSError:
+                                    pass
+            except Exception:
+                pass
+
     def cancel_task(self, task_id: str) -> None:
         worker = self._workers.get(task_id)
         if worker:
             worker.cancel()
+            if not worker.isRunning():
+                try:
+                    worker._cleanup_partial_files()
+                except Exception:
+                    pass
         task = self._tasks.get(task_id)
-        if task and task.status != DownloadStatus.DONE:
-            task.status = DownloadStatus.CANCELLED
-            self.task_updated.emit(task_id, task)
-            self._save_tasks()
-            try:
-                if task.file_path:
-                    base = task.file_path
-                    if base.endswith(".part"):
-                        base = base[:-5]
-                    if base.endswith(".ytdl"):
-                        base = base[:-5]
-                    for ext in [".part", ".ytdl"]:
-                        p = base + ext
-                        if os.path.exists(p):
-                            try:
-                                os.remove(p)
-                            except OSError:
-                                pass
-            except OSError:
-                pass
+        if task:
+            if task.status != DownloadStatus.DONE:
+                task.status = DownloadStatus.CANCELLED
+                self.task_updated.emit(task_id, task)
+                self._save_tasks()
+            self._cleanup_task_files(task)
 
     def remove_task(self, task_id: str) -> None:
         worker = self._workers.get(task_id)
         if worker and worker.isRunning():
             worker.cancel()
+        task = self._tasks.get(task_id)
+        if task and task.status != DownloadStatus.DONE:
+            self._cleanup_task_files(task)
         self._tasks.pop(task_id, None)
         if task_id in self._order:
             self._order.remove(task_id)

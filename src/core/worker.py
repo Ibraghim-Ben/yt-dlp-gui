@@ -1,6 +1,7 @@
 from __future__ import annotations
 import yt_dlp
 import os
+import re
 from PyQt6.QtCore import QThread, pyqtSignal
 from .models import DownloadTask, DownloadStatus
 from .downloader import friendly_error
@@ -59,23 +60,21 @@ class DownloadWorker(QThread):
             if logger and hasattr(logger, "_cb"):
                 orig_cb = logger._cb
                 def _worker_log_cb(lvl: str, msg: str) -> None:
-                    if "writing video thumbnail to:" in msg.lower():
-                        parts = msg.split("Writing video thumbnail to:", 1)
-                        if len(parts) > 1:
-                            thumb_path = parts[1].strip()
-                            if thumb_path:
-                                self._files_to_clean.add(thumb_path)
+                    m_thumb = re.search(r'writing video thumbnail(?:\s+\d+)?\s+to:\s*(.+)', msg, re.IGNORECASE)
+                    if m_thumb:
+                        thumb_path = m_thumb.group(1).strip().strip('"\'')
+                        if thumb_path:
+                            self._files_to_clean.add(thumb_path)
                     elif "converting thumbnail" in msg.lower():
-                        import re
                         m = re.search(r'["\'](.*?)["\']', msg)
                         if m:
-                            self._files_to_clean.add(m.group(1))
+                            self._files_to_clean.add(m.group(1).strip().strip('"\''))
                     if "The download was cancelled" in msg:
-                        if self._paused:
-                            orig_cb("info", "Download paused by user")
-                            return
-                        elif self._cancelled:
+                        if self._cancelled:
                             orig_cb("info", "Download cancelled by user")
+                            return
+                        elif self._paused:
+                            orig_cb("info", "Download paused by user")
                             return
                     orig_cb(lvl, msg)
                 logger._cb = _worker_log_cb
@@ -85,7 +84,10 @@ class DownloadWorker(QThread):
             if not self._cancelled and not self._paused:
                 self.download_finished.emit(self._task.id, self._task.output_dir, self._last_filepath)
         except yt_dlp.utils.DownloadCancelled:
-            if self._paused:
+            if self._cancelled:
+                self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
+                self._cleanup_partial_files()
+            elif self._paused:
                 self.status_changed.emit(self._task.id, DownloadStatus.PAUSED.name)
             else:
                 self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
@@ -179,12 +181,28 @@ class DownloadWorker(QThread):
             if not stem:
                 continue
             try:
-                for match in glob.glob(glob.escape(stem) + ".*"):
+                for match in glob.glob(glob.escape(stem) + "*"):
                     low = match.lower()
                     if any(low.endswith(ext) for ext in safe_exts) or low.endswith(".part") or low.endswith(".ytdl") or ".temp." in low:
                         if os.path.exists(match):
                             os.remove(match)
             except OSError:
+                pass
+
+        if self._task.output_dir and os.path.isdir(self._task.output_dir) and self._task.title:
+            try:
+                clean_title = re.sub(r'[\\/*?:"<>|]', '_', self._task.title)
+                prefix = clean_title[:20].strip()
+                if prefix:
+                    for entry in os.scandir(self._task.output_dir):
+                        if entry.is_file():
+                            name = entry.name
+                            if name.startswith(prefix) and any(name.lower().endswith(ext) for ext in safe_exts):
+                                try:
+                                    os.remove(entry.path)
+                                except OSError:
+                                    pass
+            except Exception:
                 pass
 
     def _postprocessor_hook(self, d: dict) -> None:
@@ -200,6 +218,7 @@ class DownloadWorker(QThread):
 
     def cancel(self) -> None:
         self._cancelled = True
+        self._paused = False
 
     def pause(self) -> None:
         self._paused = True
