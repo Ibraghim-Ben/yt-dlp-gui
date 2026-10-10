@@ -79,6 +79,7 @@ class DownloadWorker(QThread):
             _worker_subprocs[ident] = set()
 
         self.status_changed.emit(self._task.id, DownloadStatus.DOWNLOADING.name)
+        last_error_message = ""
         try:
             ydl_opts = dict(self._ydl_opts)
             ydl_opts["progress_hooks"] = [self._progress_hook]
@@ -88,6 +89,9 @@ class DownloadWorker(QThread):
             if logger and hasattr(logger, "_cb"):
                 orig_cb = logger._cb
                 def _worker_log_cb(lvl: str, msg: str) -> None:
+                    nonlocal last_error_message
+                    if lvl == "error":
+                        last_error_message = msg
                     m_thumb = re.search(r'writing video thumbnail(?:\s+\d+)?\s+to:\s*(.+)', msg, re.IGNORECASE)
                     if m_thumb:
                         thumb_path = m_thumb.group(1).strip().strip('"\'')
@@ -107,15 +111,28 @@ class DownloadWorker(QThread):
                     orig_cb(lvl, msg)
                 logger._cb = _worker_log_cb
 
+            ret = 0
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 self._ydl = ydl
-                ydl.download([self._task.url])
+                ret = ydl.download([self._task.url])
                 self._ydl = None
 
             if self._stopping_live:
                 self._handle_live_stream_finish()
             elif not self._cancelled and not self._paused:
-                self.download_finished.emit(self._task.id, self._task.output_dir, self._last_filepath)
+                media_ok = bool(self._last_filepath and os.path.isfile(self._last_filepath) and os.path.getsize(self._last_filepath) > 0)
+                if not media_ok:
+                    salvaged = self._salvage_live_file()
+                    if salvaged:
+                        self._last_filepath = salvaged
+                        media_ok = True
+
+                if ret != 0 or not media_ok:
+                    self._cleanup_partial_files()
+                    err_text = last_error_message or ("Download failed: output file not found" if not media_ok else f"Download failed (code {ret})")
+                    self.errored.emit(self._task.id, friendly_error(err_text))
+                else:
+                    self.download_finished.emit(self._task.id, self._task.output_dir, self._last_filepath)
         except yt_dlp.utils.DownloadCancelled:
             if self._stopping_live:
                 self._handle_live_stream_finish()

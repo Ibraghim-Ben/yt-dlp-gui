@@ -457,9 +457,11 @@ ERROR_MAP: list[tuple[str, str]] = [
 ]
 
 
-def friendly_error(exc: Exception) -> str:
-    msg = str(exc)
+def friendly_error(exc: Exception | str) -> str:
+    msg = str(exc).strip()
     for needle, friendly in ERROR_MAP:
         if needle.lower() in msg.lower():
             return friendly
+    if msg.upper().startswith("ERROR:"):
+        msg = msg[6:].strip()
     return f"Download error: {msg}"
