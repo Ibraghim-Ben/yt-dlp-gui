@@ -66,6 +66,7 @@ class QueueManager(QObject):
                     "assigned_template": task.assigned_template,
                     "is_live": getattr(task, "is_live", False),
                     "live_from_start": getattr(task, "live_from_start", True),
+                    "record_chat": getattr(task, "record_chat", True),
                 }
                 data.append(task_dict)
             
@@ -115,6 +116,7 @@ class QueueManager(QObject):
                         assigned_template=task_dict.get("assigned_template"),
                         is_live=task_dict.get("is_live", False),
                         live_from_start=task_dict.get("live_from_start", True),
+                        record_chat=task_dict.get("record_chat", True),
                     )
                     self._tasks[task.id] = task
                     self._order.append(task.id)
@@ -141,6 +143,7 @@ class QueueManager(QObject):
         embed_metadata: bool = True,
         is_live: bool = False,
         live_from_start: bool = True,
+        record_chat: bool = True,
     ) -> DownloadTask:
         for tid in self._order:
             existing = self._tasks.get(tid)
@@ -182,6 +185,7 @@ class QueueManager(QObject):
             thumbnail_url=video_info.thumbnail if video_info else "",
             is_live=is_live,
             live_from_start=live_from_start,
+            record_chat=record_chat,
         )
         self._tasks[task_id] = task
         self._order.append(task_id)
@@ -467,6 +471,7 @@ class QueueManager(QObject):
             log_callback=lambda lvl, msg: self.log_message.emit(lvl, msg),
             is_live=task.is_live,
             live_from_start=task.live_from_start,
+            record_chat=getattr(task, "record_chat", True),
         )
 
         sl_path = find_streamlink() if task.is_live and is_twitch_live_url(task.url) else None

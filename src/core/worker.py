@@ -132,6 +132,26 @@ class DownloadWorker(QThread):
                     err_text = last_error_message or ("Download failed: output file not found" if not media_ok else f"Download failed (code {ret})")
                     self.errored.emit(self._task.id, friendly_error(err_text))
                 else:
+                    if getattr(self._task, "record_chat", True) and self._last_filepath:
+                        try:
+                            from .chat_recorder import convert_youtube_live_chat_to_ass
+                            base_stem = self._last_filepath.rsplit(".", 1)[0]
+                            live_chat_json = base_stem + ".live_chat.json"
+                            if not os.path.isfile(live_chat_json) and self._task.output_dir:
+                                import glob
+                                matches = glob.glob(os.path.join(self._task.output_dir, "*.live_chat.json"))
+                                if matches:
+                                    live_chat_json = matches[0]
+                            if os.path.isfile(live_chat_json):
+                                ass_path = base_stem + ".ass"
+                                if convert_youtube_live_chat_to_ass(live_chat_json, ass_path):
+                                    self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
+                                    try:
+                                        os.remove(live_chat_json)
+                                    except OSError:
+                                        pass
+                        except Exception:
+                            pass
                     self.download_finished.emit(self._task.id, self._task.output_dir, self._last_filepath)
         except yt_dlp.utils.DownloadCancelled:
             if self._stopping_live:
@@ -666,6 +686,8 @@ class StreamlinkWorker(QThread):
         self._stopping = False
         self._proc: Optional[subprocess.Popen] = None
         self._output_file: str = ""
+        self._chat_recorder = None
+        self._ass_file: str = ""
 
     def run(self) -> None:
         ident = threading.current_thread().ident
@@ -701,6 +723,15 @@ class StreamlinkWorker(QThread):
                 self._task.url,
                 stream_qual,
             ]
+
+            if getattr(self._task, "record_chat", True):
+                m_ch = re.search(r'twitch\.tv/([a-zA-Z0-9_]+)', self._task.url)
+                if m_ch:
+                    channel = m_ch.group(1)
+                    from .chat_recorder import TwitchChatRecorder
+                    self._chat_recorder = TwitchChatRecorder(channel)
+                    self._chat_recorder.start_recording()
+                    self.log_message.emit("info", f"[streamlink] Recording live chat for #{channel}…")
 
             self.log_message.emit("info", f"[streamlink] {self._task.url} → {os.path.basename(ts_file)}")
 
@@ -769,6 +800,12 @@ class StreamlinkWorker(QThread):
 
             proc.wait()
             returncode = proc.returncode
+
+            if self._chat_recorder:
+                ass_path = ts_file.rsplit(".", 1)[0] + ".ass"
+                self._ass_file = ass_path
+                if self._chat_recorder.stop_and_save(ass_path):
+                    self.log_message.emit("info", f"[streamlink] Saved smart chat subtitles: {os.path.basename(ass_path)}")
 
             if self._cancelled:
                 self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
@@ -851,10 +888,16 @@ class StreamlinkWorker(QThread):
                 pass
 
     def _cleanup_partial_files(self) -> None:
+        if self._chat_recorder:
+            self._chat_recorder._stopped = True
         if self._output_file:
             self._try_remove(self._output_file)
             mp4_file = self._output_file.rsplit(".", 1)[0] + ".mp4"
             self._try_remove(mp4_file)
+            ass_file = self._output_file.rsplit(".", 1)[0] + ".ass"
+            self._try_remove(ass_file)
+        if self._ass_file:
+            self._try_remove(self._ass_file)
 
     def pause(self) -> None:
         pass

@@ -192,3 +192,4 @@ class DownloadTask:
     assigned_template: Optional[str] = None
     is_live: bool = False
     live_from_start: bool = True
+    record_chat: bool = True

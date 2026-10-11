@@ -282,7 +282,7 @@ class FormatFilterProxy(QSortFilterProxyModel):
 
 
 class FormatSelector(QWidget):
-    download_requested = pyqtSignal(object, object, str, str, bool, str, bool, bool, str, bool)
+    download_requested = pyqtSignal(object, object, str, str, bool, str, bool, bool, str, bool, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -419,6 +419,12 @@ class FormatSelector(QWidget):
         self._live_dvr_cb.setToolTip("Record live stream from beginning (DVR buffer)")
         options_layout.addWidget(self._live_dvr_cb)
 
+        self._live_chat_cb = QCheckBox("Chat (ASS)")
+        self._live_chat_cb.setChecked(True)
+        self._live_chat_cb.setVisible(False)
+        self._live_chat_cb.setToolTip("Record live chat as smart subtitle overlay")
+        options_layout.addWidget(self._live_chat_cb)
+
         self._audio_fmt_label = QLabel("Convert to:")
         self._audio_fmt_cb = QComboBox()
         self._audio_fmt_cb.setObjectName("audioFmtCb")
@@ -516,12 +522,14 @@ class FormatSelector(QWidget):
             self._duration_label.setVisible(False)
             self._live_badge.setVisible(True)
             self._live_dvr_cb.setVisible(True)
+            self._live_chat_cb.setVisible(True)
         else:
             self._live_badge.setVisible(False)
             self._duration_label.setStyleSheet(f"color: {subtitle_color};")
             self._duration_label.setText(video_info.display_duration or "")
             self._duration_label.setVisible(bool(video_info.display_duration))
             self._live_dvr_cb.setVisible(False)
+            self._live_chat_cb.setVisible(False)
 
         self._info_label.setText(f"<b>{video_info.title}</b>")
 
@@ -539,14 +547,13 @@ class FormatSelector(QWidget):
         self._apply_mode_to_proxy()
         
         if video_info.is_live:
-            self._subs_cb.setEnabled(False)
-            self._subs_cb.setChecked(False)
-            self._subs_cb.setToolTip("Subtitles not available for live streams")
-            self._subs_lang_cb.setEnabled(False)
-            self._subs_lang_cb.clear()
-            self._subs_lang_cb.addItem("Unavailable for live", "")
-            self._update_subs_combo_width()
+            self._subs_cb.setVisible(False)
+            self._subs_lang_cb.setVisible(False)
+            self._live_chat_cb.setVisible(True)
         else:
+            self._live_chat_cb.setVisible(False)
+            self._subs_cb.setVisible(True)
+            self._subs_lang_cb.setVisible(True)
             self._subs_cb.setToolTip("")
             self._subs_lang_cb.clear()
             self._subs_lang_cb.addItem("All", "all")
@@ -599,11 +606,15 @@ class FormatSelector(QWidget):
         self._live_badge.setVisible(False)
         self._download_btn.setEnabled(False)
         self._live_dvr_cb.setVisible(False)
+        self._subs_cb.setVisible(True)
         self._subs_cb.setToolTip("")
-        self._subs_lang_cb.clear()
-        self._update_subs_combo_width()
         self._subs_cb.setEnabled(False)
         self._subs_cb.setChecked(False)
+        self._subs_lang_cb.setVisible(True)
+        self._subs_lang_cb.clear()
+        self._update_subs_combo_width()
+        self._live_chat_cb.setVisible(False)
+        self._live_chat_cb.setChecked(True)
 
     def set_output_dir(self, path: str) -> None:
         self._folder_edit.setText(path)
@@ -693,6 +704,7 @@ class FormatSelector(QWidget):
             return
 
         live_from_start = self._live_dvr_cb.isChecked() if (self._video_info and self._video_info.is_live) else True
+        record_chat = self._live_chat_cb.isChecked() if (self._video_info and self._video_info.is_live) else False
         self.download_requested.emit(
             selected_fmt,
             audio_fmt,
@@ -704,4 +716,5 @@ class FormatSelector(QWidget):
             self._embed_meta_cb.isChecked(),
             self._audio_fmt_cb.currentData() if mode == "audio" else "",
             live_from_start,
+            record_chat,
         )

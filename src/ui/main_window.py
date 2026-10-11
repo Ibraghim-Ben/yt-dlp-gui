@@ -258,6 +258,7 @@ class MainWindow(QMainWindow):
         embed_metadata: bool = True,
         audio_format_ext: str = "",
         live_from_start: bool = True,
+        record_chat: bool = True,
     ) -> None:
         if not self._current_video:
             return
@@ -283,6 +284,7 @@ class MainWindow(QMainWindow):
             embed_metadata=embed_metadata,
             is_live=self._current_video.is_live,
             live_from_start=live_from_start,
+            record_chat=record_chat,
         )
         self._status.showMessage(f"Added to queue: {self._current_video.title}")
 

@@ -332,6 +332,7 @@ def build_ydl_opts(
     log_callback: Callable[[str, str], None],
     is_live: bool = False,
     live_from_start: bool = True,
+    record_chat: bool = False,
 ) -> dict:
     setup_bundled_binaries()
 
@@ -425,6 +426,13 @@ def build_ydl_opts(
         postprocessors.append({"key": "FFmpegEmbedSubtitle"})
     if embed_metadata:
         postprocessors.append({"key": "FFmpegMetadata"})
+    if record_chat:
+        opts["writesubtitles"] = True
+        if "subtitleslangs" in opts:
+            if "live_chat" not in opts["subtitleslangs"]:
+                opts["subtitleslangs"].append("live_chat")
+        else:
+            opts["subtitleslangs"] = ["live_chat"]
     if postprocessors:
         opts["postprocessors"] = postprocessors
 
