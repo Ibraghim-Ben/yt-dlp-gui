@@ -70,6 +70,23 @@ def write_ass_subtitles(messages: list[tuple[float, str, str, str]], output_path
         return False
 
 
+def find_live_chat_file(base_stem: str, output_dir: str = "") -> Optional[str]:
+    for cand in (base_stem + ".live_chat.json", base_stem + ".live_chat.json.part"):
+        if os.path.isfile(cand) and os.path.getsize(cand) > 0:
+            return cand
+    if output_dir and os.path.isdir(output_dir):
+        import glob
+        matches = sorted(
+            glob.glob(os.path.join(output_dir, "*.live_chat.json*")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        for m in matches:
+            if os.path.isfile(m) and os.path.getsize(m) > 0:
+                return m
+    return None
+
+
 def convert_youtube_live_chat_to_ass(json_path: str, output_ass_path: str) -> bool:
     if not os.path.isfile(json_path):
         return False
@@ -86,12 +103,22 @@ def convert_youtube_live_chat_to_ass(json_path: str, output_ass_path: str) -> bo
                     actions = action.get("actions", [])
                     for act in actions:
                         item = act.get("addChatItemAction", {}).get("item", {})
-                        renderer = item.get("liveChatTextMessageRenderer")
+                        if not item:
+                            item = act.get("item", {})
+                        renderer = (
+                            item.get("liveChatTextMessageRenderer")
+                            or item.get("liveChatPaidMessageRenderer")
+                            or item.get("liveChatMembershipItemRenderer")
+                        )
                         if not renderer:
                             continue
-                        author = renderer.get("authorName", {}).get("simpleText") or "User"
+                        author_dict = renderer.get("authorName", {})
+                        author = author_dict.get("simpleText") or "".join(r.get("text", "") for r in author_dict.get("runs", []) if "text" in r) or "User"
                         runs = renderer.get("message", {}).get("runs", [])
                         text = "".join(r.get("text", "") for r in runs if "text" in r)
+                        if not text and "headerSubtext" in renderer:
+                            header_runs = renderer.get("headerSubtext", {}).get("runs", [])
+                            text = "".join(r.get("text", "") for r in header_runs if "text" in r)
                         offset_usec = int(data.get("videoOffsetTimeMsec") or 0)
                         offset_sec = max(0.0, offset_usec / 1000.0)
                         if text:
@@ -103,6 +130,93 @@ def convert_youtube_live_chat_to_ass(json_path: str, output_ass_path: str) -> bo
         messages.sort(key=lambda x: x[0])
         return write_ass_subtitles(messages, output_ass_path, "YouTube Live Chat")
     except Exception:
+        return False
+
+
+class YouTubeChatRecorder(threading.Thread):
+    def __init__(self, url: str, ydl_opts: dict):
+        super().__init__(daemon=True)
+        self._url = url
+        self._ydl_opts = ydl_opts
+        self._ydl = None
+        self._stopped = False
+
+    def start_recording(self) -> None:
+        self.start()
+
+    def run(self) -> None:
+        import yt_dlp
+        opts = {
+            "skip_download": True,
+            "writesubtitles": True,
+            "subtitleslangs": ["live_chat"],
+            "outtmpl": self._ydl_opts.get("outtmpl", "%(title)s [%(id)s].%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "ignoreerrors": True,
+        }
+        for k in ("cookiesfrombrowser", "cookiefile", "proxy", "http_headers", "extractor_args", "nocheckcertificate", "ffmpeg_location"):
+            if k in self._ydl_opts:
+                opts[k] = self._ydl_opts[k]
+
+        recorder = self
+
+        class _ChatYoutubeDL(yt_dlp.YoutubeDL):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._open_streams = []
+
+            def sanitize_open(self, filename, open_mode="r"):
+                stream, name = super().sanitize_open(filename, open_mode)
+                if hasattr(stream, "close"):
+                    self._open_streams.append(stream)
+                return stream, name
+
+            def close_open_streams(self):
+                for s in self._open_streams:
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
+                self._open_streams.clear()
+
+            def urlopen(self, req):
+                if recorder._stopped:
+                    self.close_open_streams()
+                    raise yt_dlp.utils.DownloadCancelled()
+                return super().urlopen(req)
+
+        try:
+            with _ChatYoutubeDL(opts) as ydl:
+                self._ydl = ydl
+                ydl.download([self._url])
+        except Exception:
+            pass
+        finally:
+            if self._ydl and hasattr(self._ydl, "close_open_streams"):
+                self._ydl.close_open_streams()
+            self._ydl = None
+
+    def stop(self) -> None:
+        self._stopped = True
+        ydl = self._ydl
+        if ydl and hasattr(ydl, "close_open_streams"):
+            ydl.close_open_streams()
+        if self.is_alive():
+            self.join(timeout=2.0)
+
+    def stop_and_save(self, output_ass_path: str, output_dir: str = "") -> bool:
+        self.stop()
+        base_stem = output_ass_path.rsplit(".", 1)[0]
+        live_chat_json = find_live_chat_file(base_stem, output_dir)
+        if live_chat_json and os.path.isfile(live_chat_json):
+            if convert_youtube_live_chat_to_ass(live_chat_json, output_ass_path):
+                try:
+                    os.remove(live_chat_json)
+                except OSError:
+                    pass
+                return True
         return False
 
 

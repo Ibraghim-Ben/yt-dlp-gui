@@ -71,7 +71,7 @@ class DownloadWorker(QThread):
         self._thread_ident: Optional[int] = None
         self._files_to_clean: set[str] = set()
         self._last_filepath: str = ""
-        self._chat_proc: Optional[subprocess.Popen] = None
+        self._chat_recorder: Optional[object] = None
 
     def run(self) -> None:
         ident = threading.current_thread().ident
@@ -137,26 +137,29 @@ class DownloadWorker(QThread):
                     self.errored.emit(self._task.id, friendly_error(err_text))
                 else:
                     if getattr(self._task, "record_chat", False) and self._last_filepath:
-                        self._stop_youtube_chat_recording()
-                        try:
-                            from .chat_recorder import convert_youtube_live_chat_to_ass
-                            base_stem = self._last_filepath.rsplit(".", 1)[0]
-                            live_chat_json = base_stem + ".live_chat.json"
-                            if not os.path.isfile(live_chat_json) and self._task.output_dir:
-                                import glob
-                                matches = glob.glob(os.path.join(self._task.output_dir, "*.live_chat.json"))
-                                if matches:
-                                    live_chat_json = matches[0]
-                            if os.path.isfile(live_chat_json):
-                                ass_path = base_stem + ".ass"
-                                if convert_youtube_live_chat_to_ass(live_chat_json, ass_path):
-                                    self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
-                                    try:
-                                        os.remove(live_chat_json)
-                                    except OSError:
-                                        pass
-                        except Exception:
-                            pass
+                        recorder = self._chat_recorder
+                        self._chat_recorder = None
+                        ass_path = self._last_filepath.rsplit(".", 1)[0] + ".ass"
+                        saved = False
+                        if recorder:
+                            saved = recorder.stop_and_save(ass_path, self._task.output_dir or "")
+                        if not saved:
+                            self._stop_youtube_chat_recording()
+                            try:
+                                from .chat_recorder import find_live_chat_file, convert_youtube_live_chat_to_ass
+                                base_stem = self._last_filepath.rsplit(".", 1)[0]
+                                live_chat_json = find_live_chat_file(base_stem, self._task.output_dir or "")
+                                if live_chat_json and os.path.isfile(live_chat_json):
+                                    if convert_youtube_live_chat_to_ass(live_chat_json, ass_path):
+                                        saved = True
+                                        try:
+                                            os.remove(live_chat_json)
+                                        except OSError:
+                                            pass
+                            except Exception:
+                                pass
+                        if saved:
+                            self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
                     self.download_finished.emit(self._task.id, self._task.output_dir, self._last_filepath)
         except yt_dlp.utils.DownloadCancelled:
             if self._stopping_live:
@@ -396,45 +399,23 @@ class DownloadWorker(QThread):
         self._paused = True
 
     def _start_youtube_chat_recording(self) -> None:
-        import sys
-        outtmpl = self._ydl_opts.get("outtmpl", "")
-        cookies = self._ydl_opts.get("cookiesfrombrowser")
-        cmd = [
-            sys.executable, "-m", "yt_dlp",
-            "--write-subs", "--skip-download",
-            "--sub-langs", "live_chat",
-            "--no-progress", "--quiet",
-            "--output", outtmpl,
-        ]
-        if cookies:
-            browser = cookies[0] if isinstance(cookies, (list, tuple)) else str(cookies)
-            cmd += ["--cookies-from-browser", browser]
-        cmd.append(self._task.url)
-        cflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
-            self._chat_proc = _orig_popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=cflags,
-            )
+            from .chat_recorder import YouTubeChatRecorder
+            self._chat_recorder = YouTubeChatRecorder(self._task.url, self._ydl_opts)
+            self._chat_recorder.start_recording()
             self.log_message.emit("info", "[chat] Recording live chat in background\u2026")
         except Exception:
-            self._chat_proc = None
+            self._chat_recorder = None
 
     def _stop_youtube_chat_recording(self) -> None:
-        proc = self._chat_proc
-        self._chat_proc = None
-        if proc is None:
+        recorder = self._chat_recorder
+        self._chat_recorder = None
+        if recorder is None:
             return
         try:
-            proc.terminate()
-            proc.wait(timeout=5)
+            recorder.stop()
         except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+            pass
 
     def _handle_live_stream_finish(self) -> None:
         final_file = self._finalize_live_stream()
@@ -447,25 +428,28 @@ class DownloadWorker(QThread):
                 target = salvaged
         if target:
             if getattr(self._task, "record_chat", False):
-                try:
-                    from .chat_recorder import convert_youtube_live_chat_to_ass
-                    base_stem = target.rsplit(".", 1)[0]
-                    live_chat_json = base_stem + ".live_chat.json"
-                    if not os.path.isfile(live_chat_json) and self._task.output_dir:
-                        import glob
-                        matches = glob.glob(os.path.join(self._task.output_dir, "*.live_chat.json"))
-                        if matches:
-                            live_chat_json = matches[0]
-                    if os.path.isfile(live_chat_json):
-                        ass_path = base_stem + ".ass"
-                        if convert_youtube_live_chat_to_ass(live_chat_json, ass_path):
-                            self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
-                            try:
-                                os.remove(live_chat_json)
-                            except OSError:
-                                pass
-                except Exception:
-                    pass
+                recorder = self._chat_recorder
+                self._chat_recorder = None
+                ass_path = target.rsplit(".", 1)[0] + ".ass"
+                saved = False
+                if recorder:
+                    saved = recorder.stop_and_save(ass_path, self._task.output_dir or "")
+                if not saved:
+                    try:
+                        from .chat_recorder import find_live_chat_file, convert_youtube_live_chat_to_ass
+                        base_stem = target.rsplit(".", 1)[0]
+                        live_chat_json = find_live_chat_file(base_stem, self._task.output_dir or "")
+                        if live_chat_json and os.path.isfile(live_chat_json):
+                            if convert_youtube_live_chat_to_ass(live_chat_json, ass_path):
+                                saved = True
+                                try:
+                                    os.remove(live_chat_json)
+                                except OSError:
+                                    pass
+                    except Exception:
+                        pass
+                if saved:
+                    self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
             self.download_finished.emit(self._task.id, self._task.output_dir, target)
         else:
             self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
