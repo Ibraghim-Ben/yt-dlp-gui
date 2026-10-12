@@ -71,6 +71,7 @@ class DownloadWorker(QThread):
         self._thread_ident: Optional[int] = None
         self._files_to_clean: set[str] = set()
         self._last_filepath: str = ""
+        self._chat_proc: Optional[subprocess.Popen] = None
 
     def run(self) -> None:
         ident = threading.current_thread().ident
@@ -80,6 +81,9 @@ class DownloadWorker(QThread):
 
         self.status_changed.emit(self._task.id, DownloadStatus.DOWNLOADING.name)
         last_error_message = ""
+        is_live = bool(getattr(self._task.video_info, "is_live", False)) if self._task.video_info else False
+        if getattr(self._task, "record_chat", False) and is_live:
+            self._start_youtube_chat_recording()
         try:
             ydl_opts = dict(self._ydl_opts)
             ydl_opts["progress_hooks"] = [self._progress_hook]
@@ -132,7 +136,8 @@ class DownloadWorker(QThread):
                     err_text = last_error_message or ("Download failed: output file not found" if not media_ok else f"Download failed (code {ret})")
                     self.errored.emit(self._task.id, friendly_error(err_text))
                 else:
-                    if getattr(self._task, "record_chat", True) and self._last_filepath:
+                    if getattr(self._task, "record_chat", False) and self._last_filepath:
+                        self._stop_youtube_chat_recording()
                         try:
                             from .chat_recorder import convert_youtube_live_chat_to_ass
                             base_stem = self._last_filepath.rsplit(".", 1)[0]
@@ -298,6 +303,7 @@ class DownloadWorker(QThread):
         self._stopping_live = True
         self._cancelled = True
         self._paused = False
+        self._stop_youtube_chat_recording()
         self._kill_child_ffmpeg()
 
     def _kill_child_ffmpeg(self) -> None:
@@ -383,22 +389,87 @@ class DownloadWorker(QThread):
     def cancel(self) -> None:
         self._cancelled = True
         self._paused = False
+        self._stop_youtube_chat_recording()
         self._kill_child_ffmpeg()
 
     def pause(self) -> None:
         self._paused = True
 
+    def _start_youtube_chat_recording(self) -> None:
+        import sys
+        outtmpl = self._ydl_opts.get("outtmpl", "")
+        cookies = self._ydl_opts.get("cookiesfrombrowser")
+        cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "--write-subs", "--skip-download",
+            "--sub-langs", "live_chat",
+            "--no-progress", "--quiet",
+            "--output", outtmpl,
+        ]
+        if cookies:
+            browser = cookies[0] if isinstance(cookies, (list, tuple)) else str(cookies)
+            cmd += ["--cookies-from-browser", browser]
+        cmd.append(self._task.url)
+        cflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        try:
+            self._chat_proc = _orig_popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=cflags,
+            )
+            self.log_message.emit("info", "[chat] Recording live chat in background\u2026")
+        except Exception:
+            self._chat_proc = None
+
+    def _stop_youtube_chat_recording(self) -> None:
+        proc = self._chat_proc
+        self._chat_proc = None
+        if proc is None:
+            return
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
     def _handle_live_stream_finish(self) -> None:
         final_file = self._finalize_live_stream()
+        target = None
         if final_file and os.path.exists(final_file) and os.path.getsize(final_file) > 0:
-            self.download_finished.emit(self._task.id, self._task.output_dir, final_file)
+            target = final_file
         else:
             salvaged = self._salvage_live_file()
             if salvaged and os.path.exists(salvaged) and os.path.getsize(salvaged) > 0:
-                self.download_finished.emit(self._task.id, self._task.output_dir, salvaged)
-            else:
-                self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
-                self._cleanup_partial_files()
+                target = salvaged
+        if target:
+            if getattr(self._task, "record_chat", False):
+                try:
+                    from .chat_recorder import convert_youtube_live_chat_to_ass
+                    base_stem = target.rsplit(".", 1)[0]
+                    live_chat_json = base_stem + ".live_chat.json"
+                    if not os.path.isfile(live_chat_json) and self._task.output_dir:
+                        import glob
+                        matches = glob.glob(os.path.join(self._task.output_dir, "*.live_chat.json"))
+                        if matches:
+                            live_chat_json = matches[0]
+                    if os.path.isfile(live_chat_json):
+                        ass_path = base_stem + ".ass"
+                        if convert_youtube_live_chat_to_ass(live_chat_json, ass_path):
+                            self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
+                            try:
+                                os.remove(live_chat_json)
+                            except OSError:
+                                pass
+                except Exception:
+                    pass
+            self.download_finished.emit(self._task.id, self._task.output_dir, target)
+        else:
+            self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
+            self._cleanup_partial_files()
 
     def _finalize_live_stream(self) -> Optional[str]:
         from .ffmpeg_utils import find_ffmpeg
