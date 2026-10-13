@@ -1,5 +1,7 @@
 from __future__ import annotations
 import sys
+import os
+import subprocess
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QComboBox, QCheckBox,
@@ -7,7 +9,7 @@ from PyQt6.QtWidgets import (
     QFormLayout, QMessageBox, QApplication, QPushButton, QFileDialog,
 )
 from PyQt6.QtGui import QDoubleValidator
-from PyQt6.QtCore import QProcess
+from PyQt6.QtCore import QTimer
 from ..utils.config import Config
 from ..utils.theme import load_theme
 from ..core.ffmpeg_utils import validate_ffmpeg
@@ -256,8 +258,14 @@ class SettingsDialog(QDialog):
                 QMessageBox.StandardButton.Yes,
             )
             if ret == QMessageBox.StandardButton.Yes:
-                QProcess.startDetached(sys.executable, sys.argv)
-                QApplication.quit()
+                exe = sys.executable
+                args = sys.argv[1:] if getattr(sys, 'frozen', False) else sys.argv[1:]
+                clean_env = {
+                    k: v for k, v in os.environ.items()
+                    if not k.startswith(('QT_', '_MEI', '_PYI', 'PYTHONHOME', 'PYTHONPATH'))
+                }
+                subprocess.Popen([exe] + args, env=clean_env)
+                QTimer.singleShot(500, QApplication.quit)
         self._initial_state = self._get_current_state()
         return True
 

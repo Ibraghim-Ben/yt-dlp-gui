@@ -3,7 +3,17 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('src/resources', 'src/resources')]
 binaries = []
-hiddenimports = ['curl_cffi']
+hiddenimports = [
+    'curl_cffi',
+    'select',
+    'selectors',
+    'asyncio',
+    'asyncio.windows_events',
+    'asyncio.selector_events',
+    'websockets',
+    'websockets.legacy',
+    'websockets.legacy.client',
+]
 tmp_ret = collect_all('yt_dlp')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
