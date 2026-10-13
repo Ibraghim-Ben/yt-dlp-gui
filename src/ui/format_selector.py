@@ -144,10 +144,19 @@ class FormatTableModel(QAbstractTableModel):
     def headerData(self, section: int, orientation: Qt.Orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             if section == _COL_IDX["Ext"]:
-                return self._ext_header_name
+                return self.tr("Format") if self._ext_header_name == "Format" else self.tr("Ext")
             if section == _COL_IDX["Resolution"]:
-                return self._res_header_name
-            return _COLUMNS[section]
+                return self.tr("Bitrate") if self._res_header_name == "Bitrate" else self.tr("Resolution")
+            header_map = {
+                _COL_IDX["Resolution"]: self.tr("Resolution"),
+                _COL_IDX["FPS"]: self.tr("FPS"),
+                _COL_IDX["Video Codec"]: self.tr("Video Codec"),
+                _COL_IDX["Audio Codec"]: self.tr("Audio Codec"),
+                _COL_IDX["Size"]: self.tr("Size"),
+                _COL_IDX["Type"]: self.tr("Type"),
+                _COL_IDX["Ext"]: self.tr("Ext"),
+            }
+            return header_map.get(section, _COLUMNS[section])
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
@@ -312,7 +321,7 @@ class FormatSelector(QWidget):
         info_text_layout.setSpacing(4)
         info_text_layout.setContentsMargins(0, 2, 0, 2)
 
-        self._info_label = QLabel("No video loaded")
+        self._info_label = QLabel(self.tr("No video loaded"))
         self._info_label.setObjectName("infoLabel")
         self._info_label.setWordWrap(True)
         self._info_label.setMinimumHeight(20)
@@ -370,15 +379,15 @@ class FormatSelector(QWidget):
         self._table.setModel(self._proxy)
         root.addWidget(self._table, 1)
 
-        mode_group = QGroupBox("Mode")
+        mode_group = QGroupBox(self.tr("Mode"))
         mode_group.setObjectName("modeGroup")
         mode_layout = QHBoxLayout(mode_group)
         mode_layout.setContentsMargins(8, 4, 8, 4)
         mode_layout.setSpacing(16)
         self._bg = QButtonGroup(self)
-        self._rb_video_audio = QRadioButton("Video + Audio")
-        self._rb_video_only = QRadioButton("Video Only")
-        self._rb_audio_only = QRadioButton("Audio Only")
+        self._rb_video_audio = QRadioButton(self.tr("Video + Audio"))
+        self._rb_video_only = QRadioButton(self.tr("Video Only"))
+        self._rb_audio_only = QRadioButton(self.tr("Audio Only"))
         self._rb_video_audio.setChecked(True)
         for rb in (self._rb_video_audio, self._rb_video_only, self._rb_audio_only):
             self._bg.addButton(rb)
@@ -393,12 +402,12 @@ class FormatSelector(QWidget):
         options_layout = QHBoxLayout()
         options_layout.setSpacing(12)
         
-        self._embed_thumb_cb = QCheckBox("Embed Thumbnail")
+        self._embed_thumb_cb = QCheckBox(self.tr("Embed Thumbnail"))
         self._embed_thumb_cb.setChecked(True)
-        self._embed_meta_cb = QCheckBox("Embed Metadata")
+        self._embed_meta_cb = QCheckBox(self.tr("Embed Metadata"))
         self._embed_meta_cb.setChecked(True)
         
-        self._subs_cb = QCheckBox("Embed Subtitles")
+        self._subs_cb = QCheckBox(self.tr("Embed Subtitles"))
         self._subs_cb.setObjectName("subsCb")
         self._subs_cb.setChecked(False)
         
@@ -413,23 +422,23 @@ class FormatSelector(QWidget):
         options_layout.addWidget(self._subs_cb)
         options_layout.addWidget(self._subs_lang_cb)
 
-        self._live_dvr_cb = QCheckBox("From start (DVR)")
+        self._live_dvr_cb = QCheckBox(self.tr("From start (DVR)"))
         self._live_dvr_cb.setChecked(True)
         self._live_dvr_cb.setVisible(False)
-        self._live_dvr_cb.setToolTip("Record live stream from beginning (DVR buffer)")
+        self._live_dvr_cb.setToolTip(self.tr("Record live stream from beginning (DVR buffer)"))
         options_layout.addWidget(self._live_dvr_cb)
 
-        self._live_chat_cb = QCheckBox("Chat (ASS)")
+        self._live_chat_cb = QCheckBox(self.tr("Chat (ASS)"))
         self._live_chat_cb.setChecked(True)
         self._live_chat_cb.setVisible(False)
-        self._live_chat_cb.setToolTip("Record live chat as smart subtitle overlay")
+        self._live_chat_cb.setToolTip(self.tr("Record live chat as smart subtitle overlay"))
         options_layout.addWidget(self._live_chat_cb)
 
-        self._audio_fmt_label = QLabel("Convert to:")
+        self._audio_fmt_label = QLabel(self.tr("Convert to:"))
         self._audio_fmt_cb = QComboBox()
         self._audio_fmt_cb.setObjectName("audioFmtCb")
         self._audio_fmt_cb.setFixedWidth(90)
-        self._audio_fmt_cb.addItem("Native", "")
+        self._audio_fmt_cb.addItem(self.tr("Native"), "")
         for fmt in ("mp3", "m4a", "flac", "opus", "wav", "ogg"):
             self._audio_fmt_cb.addItem(fmt.upper(), fmt)
         self._audio_fmt_label.setVisible(False)
@@ -444,17 +453,17 @@ class FormatSelector(QWidget):
         folder_layout.setSpacing(6)
         self._folder_edit = QLineEdit()
         self._folder_edit.setObjectName("folderEdit")
-        self._folder_edit.setPlaceholderText("Save to…")
+        self._folder_edit.setPlaceholderText(self.tr("Save to…"))
         self._folder_btn = QPushButton("…")
         self._folder_btn.setObjectName("browseBtn")
         self._folder_btn.setFixedWidth(32)
         self._folder_btn.clicked.connect(self._pick_folder)
-        folder_layout.addWidget(QLabel("Folder:"))
+        folder_layout.addWidget(QLabel(self.tr("Folder:")))
         folder_layout.addWidget(self._folder_edit, 1)
         folder_layout.addWidget(self._folder_btn)
         root.addLayout(folder_layout)
 
-        self._download_btn = QPushButton("Add to Queue")
+        self._download_btn = QPushButton(self.tr("Add to Queue"))
         self._download_btn.setObjectName("downloadBtn")
         self._download_btn.setEnabled(False)
         self._download_btn.clicked.connect(self._on_download)
@@ -556,7 +565,7 @@ class FormatSelector(QWidget):
             self._subs_lang_cb.setVisible(True)
             self._subs_cb.setToolTip("")
             self._subs_lang_cb.clear()
-            self._subs_lang_cb.addItem("All", "all")
+            self._subs_lang_cb.addItem(self.tr("All"), "all")
             if video_info.subtitles:
                 default_index = -1
                 for lang_code, lang_name in video_info.subtitles:
@@ -597,7 +606,7 @@ class FormatSelector(QWidget):
         self._stop_thumb_thread()
         self._thumb_label.clear_pixmap()
         self._thumb_label.setVisible(False)
-        self._info_label.setText("No video loaded")
+        self._info_label.setText(self.tr("No video loaded"))
         self._channel_label.setText("")
         self._channel_label.setVisible(False)
         self._meta_sep_label.setVisible(False)
@@ -673,7 +682,7 @@ class FormatSelector(QWidget):
 
     def _pick_folder(self) -> None:
         current = self._folder_edit.text() or ""
-        path = QFileDialog.getExistingDirectory(self, "Select output folder", current)
+        path = QFileDialog.getExistingDirectory(self, self.tr("Select output folder"), current)
         if path:
             self._folder_edit.setText(path)
 

@@ -28,18 +28,18 @@ class LogPanel(QWidget):
 
         top = QHBoxLayout()
         top.setSpacing(8)
-        top.addWidget(QLabel("Log"))
+        top.addWidget(QLabel(self.tr("Log")))
 
         self._level_combo = QComboBox()
         self._level_combo.setObjectName("logLevelCombo")
-        self._level_combo.addItems(["All", "INFO", "WARNING", "ERROR"])
+        self._level_combo.addItems([self.tr("All"), "INFO", "WARNING", "ERROR"])
         self._level_combo.setFixedWidth(120)
         top.addWidget(self._level_combo)
         top.addStretch()
 
-        self._clear_btn = QPushButton("Clear")
+        self._clear_btn = QPushButton(self.tr("Clear"))
         self._clear_btn.setObjectName("logClearBtn")
-        self._clear_btn.setFixedWidth(60)
+        self._clear_btn.setFixedWidth(70)
         top.addWidget(self._clear_btn)
         layout.addLayout(top)
 
@@ -60,7 +60,7 @@ class LogPanel(QWidget):
         self._level_combo.currentTextChanged.connect(self._on_level_change)
 
     def _on_level_change(self, text: str) -> None:
-        self._min_level = text.lower()
+        self._min_level = "all" if text == self.tr("All") else text.lower()
         self._refresh_logs()
 
     def _refresh_logs(self) -> None:

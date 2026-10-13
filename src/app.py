@@ -5,6 +5,7 @@ import ctypes
 import pathlib
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtCore import QTranslator, QLocale, QLibraryInfo
 
 from .utils.config import Config
 from .utils.theme import load_theme
@@ -42,6 +43,41 @@ def _get_icon_path() -> str:
             return str(png)
     return ""
 
+def _setup_localization(app: QApplication, config: Config) -> tuple[QTranslator | None, QTranslator | None]:
+    lang = config.language
+    if lang == "auto":
+        system_lang = QLocale.system().name().lower()
+        target_lang = "ru" if system_lang.startswith("ru") else "en"
+    else:
+        target_lang = lang
+
+    if target_lang != "ru":
+        return None, None
+
+    base_dirs = [
+        pathlib.Path(__file__).parent / "resources" / "translations",
+        pathlib.Path(getattr(sys, "_MEIPASS", ".")) / "src" / "resources" / "translations",
+        pathlib.Path(getattr(sys, "_MEIPASS", ".")) / "resources" / "translations",
+    ]
+
+    app_translator = QTranslator()
+    for b in base_dirs:
+        ru_qm = b / "ru.qm"
+        if ru_qm.exists() and app_translator.load(str(ru_qm)):
+            app.installTranslator(app_translator)
+            break
+
+    qt_translator = QTranslator()
+    qt_trans_path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    if not qt_translator.load("qtbase_ru", qt_trans_path):
+        for b in base_dirs:
+            qt_qm = b / "qtbase_ru.qm"
+            if qt_qm.exists() and qt_translator.load(str(qt_qm)):
+                break
+    app.installTranslator(qt_translator)
+
+    return app_translator, qt_translator
+
 def run() -> int:
     sys.excepthook = global_exception_handler
     setup_bundled_binaries()
@@ -68,6 +104,7 @@ def run() -> int:
     app.setFont(font)
 
     config = Config.load()
+    translators = _setup_localization(app, config)
     if config.corrupted_backup_path:
         QMessageBox.warning(
             None,

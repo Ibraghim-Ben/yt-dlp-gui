@@ -10,16 +10,7 @@ from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
 from ..core.models import DownloadTask, DownloadStatus
 
 
-_STATUS_LABELS = {
-    DownloadStatus.QUEUED:      "Queued",
-    DownloadStatus.ANALYZING:   "Analyzing…",
-    DownloadStatus.DOWNLOADING: "Downloading",
-    DownloadStatus.PROCESSING:  "Processing…",
-    DownloadStatus.PAUSED:      "Paused",
-    DownloadStatus.DONE:        "Done",
-    DownloadStatus.ERROR:       "Error",
-    DownloadStatus.CANCELLED:   "Cancelled",
-}
+
 
 
 class ActionButton(QPushButton):
@@ -156,14 +147,14 @@ class TaskItemWidget(QWidget):
 
         self._open_folder_btn = ActionButton("folder")
         self._open_folder_btn.setObjectName("taskOpenFolderBtn")
-        self._open_folder_btn.setToolTip("Open folder")
+        self._open_folder_btn.setToolTip(self.tr("Open folder"))
         self._open_folder_btn.setVisible(False)
         self._open_folder_btn.clicked.connect(self._on_open_folder)
         top.addWidget(self._open_folder_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._open_file_btn = ActionButton("file_play")
         self._open_file_btn.setObjectName("taskOpenFileBtn")
-        self._open_file_btn.setToolTip("Open file")
+        self._open_file_btn.setToolTip(self.tr("Open file"))
         self._open_file_btn.setVisible(False)
         self._open_file_btn.clicked.connect(self._on_open_file)
         top.addWidget(self._open_file_btn, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -216,6 +207,19 @@ class TaskItemWidget(QWidget):
 
         self.update_task(task)
 
+    def _get_status_label(self, status: DownloadStatus) -> str:
+        labels = {
+            DownloadStatus.QUEUED:      self.tr("Queued"),
+            DownloadStatus.ANALYZING:   self.tr("Analyzing…"),
+            DownloadStatus.DOWNLOADING: self.tr("Downloading"),
+            DownloadStatus.PROCESSING:  self.tr("Processing…"),
+            DownloadStatus.PAUSED:      self.tr("Paused"),
+            DownloadStatus.DONE:        self.tr("Done"),
+            DownloadStatus.ERROR:       self.tr("Error"),
+            DownloadStatus.CANCELLED:   self.tr("Cancelled"),
+        }
+        return labels.get(status, status.name)
+
     def update_task(self, task: DownloadTask) -> None:
         self._status = task.status
         self._file_path = task.file_path
@@ -227,14 +231,14 @@ class TaskItemWidget(QWidget):
         is_live_saving = self._is_live and task.status == DownloadStatus.PROCESSING
         if is_live_recording:
             self._progress.setRange(0, 0)
-            self._status_label.setText("Recording…")
+            self._status_label.setText(self.tr("Recording…"))
         elif is_live_saving:
             self._progress.setRange(0, 0)
-            self._status_label.setText("Saving…")
+            self._status_label.setText(self.tr("Saving…"))
         else:
             self._progress.setRange(0, 100)
             self._progress.setValue(int(task.progress))
-            label = _STATUS_LABELS.get(task.status, task.status.name)
+            label = self._get_status_label(task.status)
             self._status_label.setText(label)
         
         status_name = task.status.name.lower()
@@ -252,7 +256,7 @@ class TaskItemWidget(QWidget):
             if task.speed and task.status == DownloadStatus.DOWNLOADING:
                 parts.append(task.speed)
             if task.eta and not self._is_live and task.status == DownloadStatus.DOWNLOADING:
-                parts.append(f"ETA {task.eta}")
+                parts.append(f"{self.tr('ETA')} {task.eta}")
             self._speed_label.setText("  ".join(parts))
         else:
             self._live_badge.setVisible(False)
@@ -275,12 +279,12 @@ class TaskItemWidget(QWidget):
             self._pause_btn.setVisible(True)
             self._pause_btn.setEnabled(True)
             self._pause_btn.set_icon_type("play")
-            self._pause_btn.setToolTip("Resume")
+            self._pause_btn.setToolTip(self.tr("Resume"))
         elif task.status in (DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED):
             self._pause_btn.setVisible(True)
             self._pause_btn.setEnabled(True)
             self._pause_btn.set_icon_type("pause")
-            self._pause_btn.setToolTip("Pause")
+            self._pause_btn.setToolTip(self.tr("Pause"))
         else:
             self._pause_btn.setVisible(False)
 
@@ -294,10 +298,10 @@ class TaskItemWidget(QWidget):
         is_processing = task.status == DownloadStatus.PROCESSING
         self._cancel_btn.setEnabled(not is_processing)
         if self._is_live and task.status == DownloadStatus.DOWNLOADING:
-            self._cancel_btn.setToolTip("Stop & Save recording")
+            self._cancel_btn.setToolTip(self.tr("Stop & Save recording"))
         else:
             self._cancel_btn.setToolTip(
-                "Remove" if is_terminal else ("Processing…" if is_processing else "Cancel")
+                self.tr("Remove") if is_terminal else (self.tr("Processing…") if is_processing else self.tr("Cancel"))
             )
 
     def _on_pause_toggle(self) -> None:
@@ -326,12 +330,12 @@ class TaskItemWidget(QWidget):
         if is_active:
             if self._is_live and self._status == DownloadStatus.DOWNLOADING:
                 msg_box = QMessageBox(self)
-                msg_box.setWindowTitle("Live Stream Recording")
-                msg_box.setText(f"Live stream recording in progress:\n\"{self._title_label.text()}\"")
-                msg_box.setInformativeText("Do you want to stop and save the recorded video, or discard it?")
-                save_btn = msg_box.addButton("Save Video", QMessageBox.ButtonRole.AcceptRole)
-                discard_btn = msg_box.addButton("Discard", QMessageBox.ButtonRole.DestructiveRole)
-                cancel_btn = msg_box.addButton("Continue Recording", QMessageBox.ButtonRole.RejectRole)
+                msg_box.setWindowTitle(self.tr("Live Stream Recording"))
+                msg_box.setText(self.tr("Live stream recording in progress:\n\"%s\"") % self._title_label.text())
+                msg_box.setInformativeText(self.tr("Do you want to stop and save the recorded video, or discard it?"))
+                save_btn = msg_box.addButton(self.tr("Save Video"), QMessageBox.ButtonRole.AcceptRole)
+                discard_btn = msg_box.addButton(self.tr("Discard"), QMessageBox.ButtonRole.DestructiveRole)
+                cancel_btn = msg_box.addButton(self.tr("Continue Recording"), QMessageBox.ButtonRole.RejectRole)
                 msg_box.setDefaultButton(save_btn)
                 msg_box.exec()
                 clicked = msg_box.clickedButton()
@@ -343,8 +347,8 @@ class TaskItemWidget(QWidget):
 
             reply = QMessageBox.question(
                 self,
-                "Cancel Download",
-                f"Are you sure you want to cancel downloading \"{self._title_label.text()}\"?",
+                self.tr("Cancel Download"),
+                self.tr("Are you sure you want to cancel downloading \"%s\"?") % self._title_label.text(),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
@@ -372,12 +376,12 @@ class DownloadQueue(QWidget):
         header = QHBoxLayout(header_widget)
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(8)
-        lbl = QLabel("Download Queue")
+        lbl = QLabel(self.tr("Download Queue"))
         lbl.setObjectName("queueHeader")
         header.addWidget(lbl)
         header.addStretch()
 
-        self._clear_btn = QPushButton("Clear done")
+        self._clear_btn = QPushButton(self.tr("Clear done"))
         self._clear_btn.setObjectName("clearDoneBtn")
         self._clear_btn.setFixedHeight(24)
         self._clear_btn.clicked.connect(self._clear_done)

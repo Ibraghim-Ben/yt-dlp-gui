@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Callable, Optional
 import yt_dlp
+from PyQt6.QtCore import QCoreApplication
 from .models import VideoInfo, FormatInfo, PlaylistEntry, MediaType
 from .ffmpeg_utils import setup_bundled_binaries, find_quickjs
 
@@ -290,18 +291,18 @@ def extract_info(
 
     if cookies_browser:
         try:
-            cb("info", "Trying without cookies…")
+            cb("info", QCoreApplication.translate("Downloader", "Trying without cookies…"))
             with yt_dlp.YoutubeDL(_build_opts(with_cookies=False)) as ydl:
                 info = ydl.extract_info(url, download=False)
-            cb("info", "No authentication needed — cookies not used")
+            cb("info", QCoreApplication.translate("Downloader", "No authentication needed — cookies not used"))
         except Exception as exc:
             if not _is_auth_error(exc):
                 raise
-            cb("info", f"Authentication required, retrying with {cookies_browser} cookies…")
+            cb("info", QCoreApplication.translate("Downloader", "Authentication required, retrying with %s cookies…") % cookies_browser)
             with yt_dlp.YoutubeDL(_build_opts(with_cookies=True)) as ydl:
                 info = ydl.extract_info(url, download=False)
             auth_required = True
-            cb("info", "Success with cookies")
+            cb("info", QCoreApplication.translate("Downloader", "Success with cookies"))
     else:
         with yt_dlp.YoutubeDL(_build_opts(with_cookies=False)) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -432,37 +433,35 @@ def build_ydl_opts(
     return opts
 
 
-ERROR_MAP: list[tuple[str, str]] = [
-    ("Video unavailable", "Video is unavailable or has been removed"),
-    ("Private video", "This video is private"),
-    ("Sign in to confirm your age", "Age-restricted — use cookies from your browser"),
-    ("Sign in to confirm", "Sign-in required — use cookies from your browser"),
-    ("This video is available to", "Members-only content"),
-    ("HTTP Error 429", "Too many requests. Try again later or use a proxy"),
-    ("HTTP Error 403", "Access forbidden (403)"),
-    ("Unsupported URL", "Unsupported URL — yt-dlp does not recognise this link"),
-    ("Unable to extract", "Could not extract video info — the URL may be unsupported"),
-    ("is not a valid URL", "Invalid URL"),
-    ("No video formats found", "No downloadable formats found"),
-    ("Postprocessing", "FFmpeg post-processing failed — check FFmpeg path in Settings"),
-    ("Conversion failed", "FFmpeg conversion failed — check FFmpeg path in Settings"),
-    ("ffmpeg", "FFmpeg error — check FFmpeg path in Settings"),
-    ("No space left", "Not enough disk space"),
-    ("Permission denied", "Permission denied — check folder write access"),
-    ("getaddrinfo failed", "Network error — check your internet connection"),
-    ("Connection refused", "Connection refused — check your proxy settings"),
-    ("handshake operation timed out", "Connection timed out — check your VPN, proxy, or internet connection"),
-    ("Unable to download API page", "Connection timed out — check your VPN, proxy, or internet connection"),
-    ("certificate verify failed", "SSL certificate error — check your system date/time or proxy settings"),
-    ("[SSL:", "SSL error — check your system date/time or proxy settings"),
-]
-
-
 def friendly_error(exc: Exception | str) -> str:
     msg = str(exc).strip()
-    for needle, friendly in ERROR_MAP:
+    error_mappings = [
+        ("Video unavailable", QCoreApplication.translate("Downloader", "Video is unavailable or has been removed")),
+        ("Private video", QCoreApplication.translate("Downloader", "This video is private")),
+        ("Sign in to confirm your age", QCoreApplication.translate("Downloader", "Age-restricted — use cookies from your browser")),
+        ("Sign in to confirm", QCoreApplication.translate("Downloader", "Sign-in required — use cookies from your browser")),
+        ("This video is available to", QCoreApplication.translate("Downloader", "Members-only content")),
+        ("HTTP Error 429", QCoreApplication.translate("Downloader", "Too many requests. Try again later or use a proxy")),
+        ("HTTP Error 403", QCoreApplication.translate("Downloader", "Access forbidden (403)")),
+        ("Unsupported URL", QCoreApplication.translate("Downloader", "Unsupported URL — yt-dlp does not recognise this link")),
+        ("Unable to extract", QCoreApplication.translate("Downloader", "Could not extract video info — the URL may be unsupported")),
+        ("is not a valid URL", QCoreApplication.translate("Downloader", "Invalid URL")),
+        ("No video formats found", QCoreApplication.translate("Downloader", "No downloadable formats found")),
+        ("Postprocessing", QCoreApplication.translate("Downloader", "FFmpeg post-processing failed — check FFmpeg path in Settings")),
+        ("Conversion failed", QCoreApplication.translate("Downloader", "FFmpeg conversion failed — check FFmpeg path in Settings")),
+        ("ffmpeg", QCoreApplication.translate("Downloader", "FFmpeg error — check FFmpeg path in Settings")),
+        ("No space left", QCoreApplication.translate("Downloader", "Not enough disk space")),
+        ("Permission denied", QCoreApplication.translate("Downloader", "Permission denied — check folder write access")),
+        ("getaddrinfo failed", QCoreApplication.translate("Downloader", "Network error — check your internet connection")),
+        ("Connection refused", QCoreApplication.translate("Downloader", "Connection refused — check your proxy settings")),
+        ("handshake operation timed out", QCoreApplication.translate("Downloader", "Connection timed out — check your VPN, proxy, or internet connection")),
+        ("Unable to download API page", QCoreApplication.translate("Downloader", "Connection timed out — check your VPN, proxy, or internet connection")),
+        ("certificate verify failed", QCoreApplication.translate("Downloader", "SSL certificate error — check your system date/time or proxy settings")),
+        ("[SSL:", QCoreApplication.translate("Downloader", "SSL error — check your system date/time or proxy settings")),
+    ]
+    for needle, friendly in error_mappings:
         if needle.lower() in msg.lower():
             return friendly
     if msg.upper().startswith("ERROR:"):
         msg = msg[6:].strip()
-    return f"Download error: {msg}"
+    return QCoreApplication.translate("Downloader", "Download error: %s") % msg

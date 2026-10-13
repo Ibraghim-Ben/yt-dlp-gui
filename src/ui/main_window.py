@@ -71,14 +71,14 @@ class MainWindow(QMainWindow):
         self._tooltip_filter = NoTooltipFilter()
         tb.installEventFilter(self._tooltip_filter)
 
-        settings_act = QAction("⚙  Settings", self)
+        settings_act = QAction("⚙  " + self.tr("Settings"), self)
         settings_act.setToolTip("")
         settings_act.triggered.connect(self._open_settings)
         tb.addAction(settings_act)
 
         tb.addSeparator()
 
-        self._log_act = QAction("📋  Log", self)
+        self._log_act = QAction("📋  " + self.tr("Log"), self)
         self._log_act.setToolTip("")
         self._log_act.setCheckable(True)
         self._log_act.setChecked(False)
@@ -165,13 +165,13 @@ class MainWindow(QMainWindow):
         self._last_clipboard_url = url
         try:
             if self._analyze_worker and self._analyze_worker.isRunning():
-                self._status.showMessage("Already analyzing… please wait.")
+                self._status.showMessage(self.tr("Already analyzing… please wait."))
                 return
         except RuntimeError:
             self._analyze_worker = None
 
         self._url_bar.set_busy(True)
-        self._status.showMessage(f"Analyzing {url}…")
+        self._status.showMessage(self.tr("Analyzing %s…") % url)
         self._format_selector.clear()
 
         worker = AnalyzeWorker(
@@ -190,15 +190,15 @@ class MainWindow(QMainWindow):
 
     def _on_analyze_done(self, video_info: VideoInfo) -> None:
         self._current_video = video_info
-        self._status.showMessage(f"Loaded: {video_info.title}")
+        self._status.showMessage(self.tr("Loaded: %s") % video_info.title)
 
         if video_info.is_playlist:
             if not video_info.playlist_entries:
-                self._status.showMessage("Error: Playlist has no available videos")
+                self._status.showMessage(self.tr("Error: Playlist has no available videos"))
                 QMessageBox.warning(
                     self,
-                    "Empty Playlist",
-                    "No available videos were found in this playlist.",
+                    self.tr("Empty Playlist"),
+                    self.tr("No available videos were found in this playlist."),
                 )
                 return
             dlg = PlaylistDialog(
@@ -212,9 +212,9 @@ class MainWindow(QMainWindow):
             self._format_selector.load_video(video_info, self._config.output_dir)
 
     def _on_analyze_error(self, msg: str) -> None:
-        self._status.showMessage(f"Error: {msg}")
+        self._status.showMessage(self.tr("Error: %s") % msg)
         dlg = QDialog(self)
-        dlg.setWindowTitle("Analysis Failed")
+        dlg.setWindowTitle(self.tr("Analysis Failed"))
         layout = QVBoxLayout(dlg)
         
         lbl = QLabel(msg)
@@ -224,7 +224,7 @@ class MainWindow(QMainWindow):
         width = max(180, min(text_width + 40, 450))
         lbl.setMinimumWidth(width)
         
-        btn = QPushButton("OK")
+        btn = QPushButton(self.tr("OK"))
         btn.clicked.connect(dlg.accept)
         
         layout.addWidget(lbl)
@@ -244,7 +244,7 @@ class MainWindow(QMainWindow):
             })
         if specs:
             self._queue.add_tasks_batch(specs)
-        self._status.showMessage(f"Added {len(entries)} items to queue")
+        self._status.showMessage(self.tr("Added %d items to queue") % len(entries))
 
     def _on_download_requested(
         self,
@@ -286,7 +286,7 @@ class MainWindow(QMainWindow):
             live_from_start=live_from_start,
             record_chat=record_chat,
         )
-        self._status.showMessage(f"Added to queue: {self._current_video.title}")
+        self._status.showMessage(self.tr("Added to queue: %s") % self._current_video.title)
 
     def _toggle_log(self, visible: bool) -> None:
         self._log_panel.setVisible(visible)
@@ -299,10 +299,8 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         QMessageBox.about(
             self,
-            "About yt-dlp GUI",
-            "<b>yt-dlp GUI</b><br><br>"
-            "A graphical interface for yt-dlp.<br><br>"
-            "Built with Python + PyQt6.",
+            self.tr("About yt-dlp GUI"),
+            self.tr("<b>yt-dlp GUI</b><br><br>A graphical interface for yt-dlp.<br><br>Built with Python + PyQt6."),
         )
 
     def _has_valid_drag_data(self, mime_data) -> bool:
@@ -448,8 +446,8 @@ class MainWindow(QMainWindow):
         if self._queue.has_active_tasks():
             reply = QMessageBox.question(
                 self,
-                "Active Downloads",
-                "There are active downloads. Cancel them and exit?",
+                self.tr("Active Downloads"),
+                self.tr("There are active downloads. Cancel them and exit?"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
@@ -460,5 +458,5 @@ class MainWindow(QMainWindow):
         try:
             self._config.save()
         except Exception as e:
-            QMessageBox.warning(self, "Save Settings Failed", f"Could not save configuration during exit:\n{e}")
+            QMessageBox.warning(self, self.tr("Save Settings Failed"), self.tr("Could not save configuration during exit:\n%s") % e)
         event.accept()

@@ -51,15 +51,15 @@ class UrlBar(QWidget):
 
         self._edit = SelectableLineEdit()
         self._edit.setObjectName("urlEdit")
-        self._edit.setPlaceholderText("Paste video or playlist URL here…")
+        self._edit.setPlaceholderText(self.tr("Paste video or playlist URL here…"))
         self._edit.returnPressed.connect(self._emit)
 
-        self._paste_btn = QPushButton("Paste URL")
+        self._paste_btn = QPushButton(self.tr("Paste URL"))
         self._paste_btn.setObjectName("pasteLinkBtn")
         self._paste_btn.setFixedWidth(100)
         self._paste_btn.clicked.connect(self._paste_and_analyze)
 
-        self._btn = QPushButton("Analyze")
+        self._btn = QPushButton(self.tr("Analyze"))
         self._btn.setObjectName("analyzeBtn")
         self._btn.setFixedWidth(110)
         self._btn.clicked.connect(self._emit)
@@ -97,7 +97,7 @@ class UrlBar(QWidget):
         self._btn.setEnabled(not busy)
         self._paste_btn.setEnabled(not busy)
         self._edit.setEnabled(not busy)
-        self._btn.setText("Analyzing…" if busy else "Analyze")
+        self._btn.setText(self.tr("Analyzing…") if busy else self.tr("Analyze"))
 
     def clear(self) -> None:
         self._edit.clear()

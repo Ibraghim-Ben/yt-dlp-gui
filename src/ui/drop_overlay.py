@@ -62,10 +62,10 @@ class DropOverlay(QWidget):
         title_font.setBold(True)
         painter.setFont(title_font)
         painter.setPen(title_color)
-        painter.drawText(QRectF(card_rect.x(), card_rect.y() + 80, card_rect.width(), 32), Qt.AlignmentFlag.AlignCenter, "Drop link here to download")
+        painter.drawText(QRectF(card_rect.x(), card_rect.y() + 80, card_rect.width(), 32), Qt.AlignmentFlag.AlignCenter, self.tr("Drop link here to download"))
 
         sub_font = QFont(self.font())
         sub_font.setPointSize(10)
         painter.setFont(sub_font)
         painter.setPen(subtitle_color)
-        painter.drawText(QRectF(card_rect.x(), card_rect.y() + 116, card_rect.width(), 26), Qt.AlignmentFlag.AlignCenter, "Release to paste URL and start auto-analysis")
+        painter.drawText(QRectF(card_rect.x(), card_rect.y() + 116, card_rect.width(), 26), Qt.AlignmentFlag.AlignCenter, self.tr("Release to paste URL and start auto-analysis"))

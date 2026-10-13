@@ -1,4 +1,5 @@
 from __future__ import annotations
+import sys
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QComboBox, QCheckBox,
@@ -6,6 +7,7 @@ from PyQt6.QtWidgets import (
     QFormLayout, QMessageBox, QApplication, QPushButton, QFileDialog,
 )
 from PyQt6.QtGui import QDoubleValidator
+from PyQt6.QtCore import QProcess
 from ..utils.config import Config
 from ..utils.theme import load_theme
 from ..core.ffmpeg_utils import validate_ffmpeg
@@ -15,7 +17,7 @@ class SettingsDialog(QDialog):
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
         self._config = config
-        self.setWindowTitle("Settings")
+        self.setWindowTitle(self.tr("Settings"))
         self.setMinimumSize(580, 460)
         self._build_ui()
         self._load()
@@ -26,9 +28,9 @@ class SettingsDialog(QDialog):
 
         tabs = QTabWidget()
         tabs.setObjectName("settingsTabs")
-        tabs.addTab(self._general_tab(), "General")
-        tabs.addTab(self._network_tab(), "Network")
-        tabs.addTab(self._ffmpeg_tab(), "FFmpeg")
+        tabs.addTab(self._general_tab(), self.tr("General"))
+        tabs.addTab(self._network_tab(), self.tr("Network"))
+        tabs.addTab(self._ffmpeg_tab(), self.tr("FFmpeg"))
 
         layout.addWidget(tabs)
 
@@ -44,29 +46,35 @@ class SettingsDialog(QDialog):
         form = QFormLayout(w)
         form.setSpacing(10)
 
+        self._lang_combo = QComboBox()
+        self._lang_combo.addItem(self.tr("Auto"), "auto")
+        self._lang_combo.addItem("English", "en")
+        self._lang_combo.addItem("Русский", "ru")
+        form.addRow(self.tr("Language:"), self._lang_combo)
+
         self._template = QLineEdit()
         self._template.setPlaceholderText("[title] - [uploader].[ext]")
-        form.addRow("Filename template:", self._template)
+        form.addRow(self.tr("Filename template:"), self._template)
 
-        hint = QLabel("Available: [title]  [uploader]  [id]  [ext]  [resolution]")
+        hint = QLabel(self.tr("Available: [title]  [uploader]  [id]  [ext]  [resolution]"))
         hint.setObjectName("hintLabel")
         form.addRow("", hint)
 
         self._theme_combo = QComboBox()
         self._theme_combo.addItems(["dark", "light"])
-        form.addRow("Theme:", self._theme_combo)
+        form.addRow(self.tr("Theme:"), self._theme_combo)
 
         self._parallel_spin = QSpinBox()
         self._parallel_spin.setMinimum(1)
         self._parallel_spin.setMaximum(10)
-        form.addRow("Parallel downloads:", self._parallel_spin)
+        form.addRow(self.tr("Parallel downloads:"), self._parallel_spin)
 
-        parallel_hint = QLabel("Maximum 10 concurrent downloads")
+        parallel_hint = QLabel(self.tr("Maximum 10 concurrent downloads"))
         parallel_hint.setObjectName("hintLabel")
         form.addRow("", parallel_hint)
 
-        self._clipboard_check = QCheckBox("Auto-detect copied video links on window focus")
-        form.addRow("Clipboard:", self._clipboard_check)
+        self._clipboard_check = QCheckBox(self.tr("Auto-detect copied video links on window focus"))
+        form.addRow(self.tr("Clipboard:"), self._clipboard_check)
 
         return w
 
@@ -76,7 +84,7 @@ class SettingsDialog(QDialog):
         form.setSpacing(10)
 
         self._rate_val = QLineEdit()
-        self._rate_val.setPlaceholderText("Unlimited")
+        self._rate_val.setPlaceholderText(self.tr("Unlimited"))
         val_validator = QDoubleValidator(0.0, 999999.0, 2, self)
         val_validator.setNotation(QDoubleValidator.Notation.StandardNotation)
         self._rate_val.setValidator(val_validator)
@@ -87,13 +95,13 @@ class SettingsDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(self._rate_val, 1)
         row.addWidget(self._rate_unit)
-        form.addRow("Rate limit:", row)
+        form.addRow(self.tr("Rate limit:"), row)
 
         self._cookies_browser = QComboBox()
         self._cookies_browser.addItems(["", "chrome", "firefox", "edge", "safari", "opera", "brave", "vivaldi", "yandex", "tor", "duckduckgo", "whale"])
-        form.addRow("Cookies from browser:", self._cookies_browser)
+        form.addRow(self.tr("Cookies from browser:"), self._cookies_browser)
 
-        hint = QLabel("Used for age-restricted or login-required content.")
+        hint = QLabel(self.tr("Used for age-restricted or login-required content."))
         hint.setObjectName("hintLabel")
         form.addRow("", hint)
 
@@ -106,26 +114,26 @@ class SettingsDialog(QDialog):
 
         path_row = QHBoxLayout()
         self._ffmpeg_path = QLineEdit()
-        self._ffmpeg_path.setPlaceholderText("Auto-detected")
+        self._ffmpeg_path.setPlaceholderText(self.tr("Auto-detected"))
         
-        check_btn = QPushButton("Check")
+        check_btn = QPushButton(self.tr("Check"))
         check_btn.setFixedWidth(70)
         check_btn.clicked.connect(self._on_ffmpeg_path_changed)
         
-        browse_btn = QPushButton("Browse…")
+        browse_btn = QPushButton(self.tr("Browse…"))
         browse_btn.setFixedWidth(90)
         browse_btn.clicked.connect(self._browse_ffmpeg)
         path_row.addWidget(self._ffmpeg_path, 1)
         path_row.addWidget(check_btn)
         path_row.addWidget(browse_btn)
-        form.addRow("FFmpeg path:", path_row)
+        form.addRow(self.tr("FFmpeg path:"), path_row)
 
         self._ffmpeg_status = QLabel("")
         self._ffmpeg_status.setObjectName("hintLabel")
         self._ffmpeg_status.setWordWrap(True)
         form.addRow("", self._ffmpeg_status)
 
-        hint = QLabel("Leave empty to use auto-detected FFmpeg.")
+        hint = QLabel(self.tr("Leave empty to use auto-detected FFmpeg."))
         hint.setObjectName("hintLabel")
         form.addRow("", hint)
 
@@ -133,7 +141,7 @@ class SettingsDialog(QDialog):
 
     def _browse_ffmpeg(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select FFmpeg executable", "",
+            self, self.tr("Select FFmpeg executable"), "",
             "FFmpeg (ffmpeg ffmpeg.exe);;All Files (*)"
         )
         if path:
@@ -178,12 +186,17 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self._cookies_browser.setCurrentIndex(idx)
 
+        idx_lang = self._lang_combo.findData(cfg.language)
+        if idx_lang >= 0:
+            self._lang_combo.setCurrentIndex(idx_lang)
+
         self._ffmpeg_path.setText(cfg.ffmpeg_path or "")
         self._clipboard_check.setChecked(cfg.clipboard_monitor)
         self._initial_state = self._get_current_state()
 
     def _get_current_state(self) -> tuple:
         return (
+            self._lang_combo.currentData(),
             self._template.text(),
             self._theme_combo.currentText(),
             self._parallel_spin.value(),
@@ -206,6 +219,8 @@ class SettingsDialog(QDialog):
         cfg.theme = self._theme_combo.currentText()
         cfg.max_parallel = self._parallel_spin.value()
         cfg.clipboard_monitor = self._clipboard_check.isChecked()
+        lang_changed = cfg.language != self._lang_combo.currentData()
+        cfg.language = self._lang_combo.currentData()
         
         rate_v = self._rate_val.text().strip()
         if rate_v:
@@ -222,16 +237,27 @@ class SettingsDialog(QDialog):
             if ok:
                 cfg.ffmpeg_path = ffmpeg_val
             else:
-                QMessageBox.warning(self, "Invalid FFmpeg", f"The specified FFmpeg path is not valid:\n{ffmpeg_val}\n\nReason: {msg}")
+                QMessageBox.warning(self, self.tr("Invalid FFmpeg"), self.tr("The specified FFmpeg path is not valid:\n%s\n\nReason: %s") % (ffmpeg_val, msg))
                 return False
         else:
             cfg.ffmpeg_path = ""
         try:
             cfg.save()
         except Exception as e:
-            QMessageBox.warning(self, "Save Settings Failed", f"Could not save configuration:\n{e}")
+            QMessageBox.warning(self, self.tr("Save Settings Failed"), self.tr("Could not save configuration:\n%s") % e)
             return False
         load_theme(QApplication.instance(), cfg.theme)
+        if lang_changed:
+            ret = QMessageBox.question(
+                self,
+                self.tr("Language Changed"),
+                self.tr("Language change will take effect after restarting the application.\n\nRestart now?"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if ret == QMessageBox.StandardButton.Yes:
+                QProcess.startDetached(sys.executable, sys.argv)
+                QApplication.quit()
         self._initial_state = self._get_current_state()
         return True
 
@@ -243,8 +269,8 @@ class SettingsDialog(QDialog):
         if self._has_unsaved_changes():
             ret = QMessageBox.question(
                 self,
-                "Unsaved Changes",
-                "Do you want to save changes before closing?",
+                self.tr("Unsaved Changes"),
+                self.tr("Do you want to save changes before closing?"),
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard,
                 QMessageBox.StandardButton.Save,
             )

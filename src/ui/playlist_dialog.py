@@ -19,7 +19,7 @@ class PlaylistDialog(QDialog):
         self._entries = list(video_info.playlist_entries)
         self._checkboxes: list[QCheckBox] = []
 
-        self.setWindowTitle("Select Videos from Playlist")
+        self.setWindowTitle(self.tr("Select Videos from Playlist"))
         self.setMinimumSize(700, 500)
         self._build_ui()
         self._populate(self._entries)
@@ -32,15 +32,15 @@ class PlaylistDialog(QDialog):
         title.setObjectName("playlistTitle")
         layout.addWidget(title)
 
-        count_str = f"{len(self._entries)} videos"
+        count_str = f"{len(self._entries)} " + self.tr("videos")
         self._count_label = QLabel(count_str)
         self._count_label.setObjectName("playlistCount")
         layout.addWidget(self._count_label)
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
-        sel_all = QPushButton("Select all")
-        sel_none = QPushButton("Deselect all")
+        sel_all = QPushButton(self.tr("Select all"))
+        sel_none = QPushButton(self.tr("Deselect all"))
         sel_all.clicked.connect(self._select_all)
         sel_none.clicked.connect(self._deselect_all)
         toolbar.addWidget(sel_all)
@@ -48,7 +48,7 @@ class PlaylistDialog(QDialog):
         toolbar.addStretch()
 
         self._filter_edit = QLineEdit()
-        self._filter_edit.setPlaceholderText("Filter by title…")
+        self._filter_edit.setPlaceholderText(self.tr("Filter by title…"))
         self._filter_edit.setFixedWidth(200)
         self._filter_edit.textChanged.connect(self._apply_filter)
         toolbar.addWidget(self._filter_edit)
@@ -74,7 +74,7 @@ class PlaylistDialog(QDialog):
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         self._ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        self._ok_btn.setText("Add to Queue")
+        self._ok_btn.setText(self.tr("Add to Queue"))
         layout.addWidget(buttons)
 
     def _populate(self, entries: list[PlaylistEntry]) -> None:
@@ -92,7 +92,7 @@ class PlaylistDialog(QDialog):
 
             dur_str = format_duration(entry.duration)
 
-            avail_str = "" if entry.available else "  ⚠ Unavailable"
+            avail_str = "" if entry.available else "  " + self.tr("⚠ Unavailable")
             label = f"{entry.index:3d}.  {entry.title}{avail_str}"
             if dur_str:
                 label += f"    [{dur_str}]"
@@ -124,7 +124,7 @@ class PlaylistDialog(QDialog):
 
     def _update_count(self) -> None:
         checked = sum(1 for cb in self._checkboxes if cb.isChecked())
-        self._selected_label.setText(f"Selected: {checked} of {len(self._entries)}")
+        self._selected_label.setText(self.tr("Selected: {0} of {1}").format(checked, len(self._entries)))
         self._ok_btn.setEnabled(checked > 0)
 
     def _accept(self) -> None:

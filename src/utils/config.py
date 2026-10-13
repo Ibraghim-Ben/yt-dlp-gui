@@ -22,6 +22,7 @@ class Config:
     download_archive: str = ""
     window_geometry: str = ""
     clipboard_monitor: bool = False
+    language: str = "auto"
     corrupted_backup_path: str = field(default="", repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -33,6 +34,8 @@ class Config:
             self.window_geometry = ""
         if not isinstance(self.clipboard_monitor, bool):
             self.clipboard_monitor = bool(self.clipboard_monitor)
+        if self.language not in ("auto", "en", "ru"):
+            self.language = "auto"
 
     @staticmethod
     def load() -> "Config":
