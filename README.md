@@ -6,7 +6,7 @@ A graphical interface for yt-dlp - download videos from YouTube and 1000+ other 
 
 ## Features
 
-- Download video + audio, video only, or audio only
+- Download video + audio, video only, or audio only;
 - Parallel downloads (up to 10 simultaneous)
 - Playlist support with entry selection
 - Format selector with resolution, FPS, codec, size info
