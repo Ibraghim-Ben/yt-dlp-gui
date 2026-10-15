@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import sys
 import subprocess
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
@@ -9,9 +10,59 @@ from PyQt6.QtCore import Qt, pyqtSignal, QPointF, QRectF, QSize
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
 from ..core.models import DownloadTask, DownloadStatus
 
+def show_in_folder(path: str) -> None:
+    norm_path = os.path.normpath(path)
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
 
+            ole32 = ctypes.windll.ole32
+            shell32 = ctypes.windll.shell32
 
+            hr_init = ole32.CoInitialize(None)
+            need_uninit = hr_init in (0, 1)
 
+            try:
+                ILCreateFromPathW = shell32.ILCreateFromPathW
+                ILCreateFromPathW.restype = ctypes.c_void_p
+                ILCreateFromPathW.argtypes = [wintypes.LPCWSTR]
+
+                ILFree = shell32.ILFree
+                ILFree.argtypes = [ctypes.c_void_p]
+
+                SHOpenFolderAndSelectItems = shell32.SHOpenFolderAndSelectItems
+                SHOpenFolderAndSelectItems.restype = ctypes.HRESULT
+                SHOpenFolderAndSelectItems.argtypes = [
+                    ctypes.c_void_p,
+                    wintypes.UINT,
+                    ctypes.c_void_p,
+                    wintypes.DWORD,
+                ]
+
+                pidl = ILCreateFromPathW(norm_path)
+                if pidl:
+                    try:
+                        hr = SHOpenFolderAndSelectItems(pidl, 0, None, 0)
+                        if hr == 0:
+                            return
+                    finally:
+                        ILFree(pidl)
+            finally:
+                if need_uninit:
+                    ole32.CoUninitialize()
+        except Exception:
+            pass
+
+        subprocess.Popen(f'explorer /select,"{norm_path}"')
+    else:
+        parent_dir = os.path.dirname(norm_path) if os.path.isfile(norm_path) else norm_path
+        if hasattr(os, "startfile"):
+            os.startfile(parent_dir)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", norm_path])
+        else:
+            subprocess.Popen(["xdg-open", parent_dir])
 
 class ActionButton(QPushButton):
     def __init__(self, icon_type: str, parent=None):
@@ -93,7 +144,6 @@ class ActionButton(QPushButton):
                 QPointF(cx - 2.5, cy + 3.5),
             ]
             painter.drawPolygon(points)
-
 
 class TaskItemWidget(QWidget):
     pause_clicked = pyqtSignal(str)
@@ -313,15 +363,26 @@ class TaskItemWidget(QWidget):
             self.pause_clicked.emit(self._task_id)
 
     def _on_open_folder(self) -> None:
+        target = None
         if self._file_path and os.path.isfile(self._file_path):
-            # /select, and the path MUST be a single argument — no space between them
-            subprocess.Popen(["explorer", f"/select,{os.path.normpath(self._file_path)}"])
+            target = self._file_path
+        elif self._file_path and self._output_dir and os.path.isfile(os.path.join(self._output_dir, os.path.basename(self._file_path))):
+            target = os.path.join(self._output_dir, os.path.basename(self._file_path))
+
+        if target:
+            show_in_folder(target)
         elif self._output_dir and os.path.isdir(self._output_dir):
             os.startfile(self._output_dir)
 
     def _on_open_file(self) -> None:
+        target = None
         if self._file_path and os.path.isfile(self._file_path):
-            os.startfile(os.path.normpath(self._file_path))
+            target = self._file_path
+        elif self._file_path and self._output_dir and os.path.isfile(os.path.join(self._output_dir, os.path.basename(self._file_path))):
+            target = os.path.join(self._output_dir, os.path.basename(self._file_path))
+
+        if target:
+            os.startfile(os.path.normpath(target))
         elif self._output_dir and os.path.isdir(self._output_dir):
             os.startfile(self._output_dir)
 
