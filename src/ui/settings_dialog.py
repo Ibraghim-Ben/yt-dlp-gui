@@ -259,7 +259,7 @@ class SettingsDialog(QDialog):
             )
             if ret == QMessageBox.StandardButton.Yes:
                 exe = sys.executable
-                args = sys.argv[1:] if getattr(sys, 'frozen', False) else sys.argv[1:]
+                args = sys.argv[1:] if getattr(sys, 'frozen', False) else sys.argv
                 clean_env = {
                     k: v for k, v in os.environ.items()
                     if not k.startswith(('QT_', '_MEI', '_PYI', 'PYTHONHOME', 'PYTHONPATH'))

@@ -54,7 +54,7 @@ def show_in_folder(path: str) -> None:
         except Exception:
             pass
 
-        subprocess.Popen(f'explorer /select,"{norm_path}"')
+        subprocess.Popen(["explorer", f"/select,{norm_path}"])
     else:
         parent_dir = os.path.dirname(norm_path) if os.path.isfile(norm_path) else norm_path
         if hasattr(os, "startfile"):
