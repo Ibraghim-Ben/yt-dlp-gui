@@ -9,13 +9,13 @@ description = "A graphical interface for yt-dlp"
 requires-python = ">=3.11"
 dependencies = [
     "PyQt6>=6.7",
-    "yt-dlp>=2024.1.1",
+    "yt-dlp>=2026.6.9",
     "platformdirs>=4.0",
-    "curl-cffi>=0.5.0",
+    "curl-cffi>=0.15.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-qt", "ruff", "mypy", "pyinstaller"]
+dev = ["pytest", "pytest-qt", "ruff", "mypy", "pyinstaller", "pip-tools"]
 
 [project.scripts]
 yt-dlp-gui = "src.__main__:main"
