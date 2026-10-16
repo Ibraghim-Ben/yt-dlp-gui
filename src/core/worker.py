@@ -73,6 +73,58 @@ class DownloadWorker(QThread):
         self._last_filepath: str = ""
         self._chat_recorder: Optional[object] = None
 
+    def _patch_ydl_logger(self, ydl_opts: dict, last_error_ref: list) -> None:
+        logger = ydl_opts.get("logger")
+        if not (logger and hasattr(logger, "_cb")):
+            return
+        orig_cb = logger._cb
+        def _worker_log_cb(lvl: str, msg: str) -> None:
+            if lvl == "error":
+                last_error_ref[0] = msg
+            m_thumb = re.search(r'writing video thumbnail(?:\s+\d+)?\s+to:\s*(.+)', msg, re.IGNORECASE)
+            if m_thumb:
+                thumb_path = m_thumb.group(1).strip().strip('"\'')
+                if thumb_path:
+                    self._files_to_clean.add(thumb_path)
+            elif "converting thumbnail" in msg.lower():
+                m = re.search(r'["\'](.*?)["\']', msg)
+                if m:
+                    self._files_to_clean.add(m.group(1).strip().strip('"\''  ))
+            if "The download was cancelled" in msg:
+                if self._cancelled:
+                    orig_cb("info", "Download cancelled by user")
+                    return
+                elif self._paused:
+                    orig_cb("info", "Download paused by user")
+                    return
+            orig_cb(lvl, msg)
+        logger._cb = _worker_log_cb
+
+    def _finalize_chat_recording(self, filepath: str) -> None:
+        recorder = self._chat_recorder
+        self._chat_recorder = None
+        ass_path = filepath.rsplit(".", 1)[0] + ".ass"
+        saved = False
+        if recorder:
+            saved = recorder.stop_and_save(ass_path, self._task.output_dir or "")
+        if not saved:
+            self._stop_youtube_chat_recording()
+            try:
+                from .chat_recorder import find_live_chat_file, convert_youtube_live_chat_to_ass
+                base_stem = filepath.rsplit(".", 1)[0]
+                live_chat_json = find_live_chat_file(base_stem, self._task.output_dir or "")
+                if live_chat_json and os.path.isfile(live_chat_json):
+                    if convert_youtube_live_chat_to_ass(live_chat_json, ass_path):
+                        saved = True
+                        try:
+                            os.remove(live_chat_json)
+                        except OSError:
+                            pass
+            except Exception:
+                pass
+        if saved:
+            self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
+
     def run(self) -> None:
         ident = threading.current_thread().ident
         self._thread_ident = ident
@@ -80,7 +132,7 @@ class DownloadWorker(QThread):
             _worker_subprocs[ident] = set()
 
         self.status_changed.emit(self._task.id, DownloadStatus.DOWNLOADING.name)
-        last_error_message = ""
+        last_error_ref = [""]
         is_live = bool(getattr(self._task.video_info, "is_live", False)) if self._task.video_info else False
         if getattr(self._task, "record_chat", False) and is_live:
             self._start_youtube_chat_recording()
@@ -88,32 +140,7 @@ class DownloadWorker(QThread):
             ydl_opts = dict(self._ydl_opts)
             ydl_opts["progress_hooks"] = [self._progress_hook]
             ydl_opts["postprocessor_hooks"] = [self._postprocessor_hook]
-
-            logger = ydl_opts.get("logger")
-            if logger and hasattr(logger, "_cb"):
-                orig_cb = logger._cb
-                def _worker_log_cb(lvl: str, msg: str) -> None:
-                    nonlocal last_error_message
-                    if lvl == "error":
-                        last_error_message = msg
-                    m_thumb = re.search(r'writing video thumbnail(?:\s+\d+)?\s+to:\s*(.+)', msg, re.IGNORECASE)
-                    if m_thumb:
-                        thumb_path = m_thumb.group(1).strip().strip('"\'')
-                        if thumb_path:
-                            self._files_to_clean.add(thumb_path)
-                    elif "converting thumbnail" in msg.lower():
-                        m = re.search(r'["\'](.*?)["\']', msg)
-                        if m:
-                            self._files_to_clean.add(m.group(1).strip().strip('"\''))
-                    if "The download was cancelled" in msg:
-                        if self._cancelled:
-                            orig_cb("info", "Download cancelled by user")
-                            return
-                        elif self._paused:
-                            orig_cb("info", "Download paused by user")
-                            return
-                    orig_cb(lvl, msg)
-                logger._cb = _worker_log_cb
+            self._patch_ydl_logger(ydl_opts, last_error_ref)
 
             ret = 0
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -133,33 +160,12 @@ class DownloadWorker(QThread):
 
                 if ret != 0 or not media_ok:
                     self._cleanup_partial_files()
+                    last_error_message = last_error_ref[0]
                     err_text = last_error_message or ("Download failed: output file not found" if not media_ok else f"Download failed (code {ret})")
                     self.errored.emit(self._task.id, friendly_error(err_text))
                 else:
                     if getattr(self._task, "record_chat", False) and self._last_filepath:
-                        recorder = self._chat_recorder
-                        self._chat_recorder = None
-                        ass_path = self._last_filepath.rsplit(".", 1)[0] + ".ass"
-                        saved = False
-                        if recorder:
-                            saved = recorder.stop_and_save(ass_path, self._task.output_dir or "")
-                        if not saved:
-                            self._stop_youtube_chat_recording()
-                            try:
-                                from .chat_recorder import find_live_chat_file, convert_youtube_live_chat_to_ass
-                                base_stem = self._last_filepath.rsplit(".", 1)[0]
-                                live_chat_json = find_live_chat_file(base_stem, self._task.output_dir or "")
-                                if live_chat_json and os.path.isfile(live_chat_json):
-                                    if convert_youtube_live_chat_to_ass(live_chat_json, ass_path):
-                                        saved = True
-                                        try:
-                                            os.remove(live_chat_json)
-                                        except OSError:
-                                            pass
-                            except Exception:
-                                pass
-                        if saved:
-                            self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
+                        self._finalize_chat_recording(self._last_filepath)
                     self.download_finished.emit(self._task.id, self._task.output_dir, self._last_filepath)
         except yt_dlp.utils.DownloadCancelled:
             if self._stopping_live:
@@ -455,7 +461,18 @@ class DownloadWorker(QThread):
             self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
             self._cleanup_partial_files()
 
+    def _inspect_streams(self, path: str, probe_or_ffmpeg: str, ffmpeg_bin: str, cflags: int) -> tuple[bool, bool]:
+        import subprocess as _sp
+        cmd = [probe_or_ffmpeg, path] if probe_or_ffmpeg != ffmpeg_bin else [ffmpeg_bin, "-i", path]
+        try:
+            r = _sp.run(cmd, capture_output=True, text=True, timeout=10, creationflags=cflags)
+            text = r.stderr or r.stdout
+            return (": Video:" in text, ": Audio:" in text)
+        except Exception:
+            return (False, False)
+
     def _finalize_live_stream(self) -> Optional[str]:
+
         from .ffmpeg_utils import find_ffmpeg
         import subprocess
         import re
@@ -502,15 +519,7 @@ class DownloadWorker(QThread):
             return None
 
         def inspect_streams(path: str) -> tuple[bool, bool]:
-            cmd = [probe_bin or ffmpeg_bin, path] if probe_bin else [ffmpeg_bin, "-i", path]
-            try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=10, creationflags=cflags)
-                text = r.stderr or r.stdout
-                has_v = ": Video:" in text
-                has_a = ": Audio:" in text
-                return (has_v, has_a)
-            except Exception:
-                return (False, False)
+            return self._inspect_streams(path, probe_bin or ffmpeg_bin, ffmpeg_bin, cflags)
 
         video_files: list[str] = []
         audio_files: list[str] = []
@@ -816,26 +825,11 @@ class StreamlinkWorker(QThread):
                     continue
                 self.log_message.emit("debug", f"[streamlink] {line}")
 
-                m_bytes = bytes_pattern.search(line)
-                if m_bytes:
-                    val = float(m_bytes.group(1))
-                    unit = m_bytes.group(2).upper()
-                    mult = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
-                    total_bytes = val * mult.get(unit, 1)
-
-                speed_str = ""
-                m_speed = speed_pattern.search(line)
-                if m_speed:
-                    sv = float(m_speed.group(1))
-                    su = m_speed.group(2).upper()
-                    mult = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
-                    bps = sv * mult.get(su, 1)
-                    if bps >= 1024**2:
-                        speed_str = f"{bps/1024**2:.1f} MiB/s"
-                    elif bps >= 1024:
-                        speed_str = f"{bps/1024:.1f} KiB/s"
-                    else:
-                        speed_str = f"{bps:.0f} B/s"
+                parsed_bytes, speed_str = self._parse_streamlink_line(
+                    line, bytes_pattern, speed_pattern, total_bytes
+                )
+                if parsed_bytes is not None:
+                    total_bytes = parsed_bytes
 
                 now = time.monotonic()
                 if now - last_emit >= 0.5:
@@ -889,6 +883,31 @@ class StreamlinkWorker(QThread):
         finally:
             with _subproc_lock:
                 _worker_subprocs.pop(ident, None)
+
+    def _parse_streamlink_line(
+        self, line: str, bytes_pattern, speed_pattern, current_bytes: float
+    ) -> tuple[Optional[float], str]:
+        mult_map = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+        new_bytes: Optional[float] = None
+        m_bytes = bytes_pattern.search(line)
+        if m_bytes:
+            val = float(m_bytes.group(1))
+            unit = m_bytes.group(2).upper()
+            new_bytes = val * mult_map.get(unit, 1)
+
+        speed_str = ""
+        m_speed = speed_pattern.search(line)
+        if m_speed:
+            sv = float(m_speed.group(1))
+            su = m_speed.group(2).upper()
+            bps = sv * mult_map.get(su, 1)
+            if bps >= 1024**2:
+                speed_str = f"{bps/1024**2:.1f} MiB/s"
+            elif bps >= 1024:
+                speed_str = f"{bps/1024:.1f} KiB/s"
+            else:
+                speed_str = f"{bps:.0f} B/s"
+        return new_bytes, speed_str
 
     def _convert_ts(self, ts_path: str) -> Optional[str]:
         from .ffmpeg_utils import find_ffmpeg

@@ -208,7 +208,7 @@ class QueueManager(QObject):
 
     def pause_task(self, task_id: str) -> None:
         task = self._tasks.get(task_id)
-        if not task:
+        if not task or getattr(task, "is_live", False):
             return
         worker = self._workers.get(task_id)
         if worker and worker.isRunning():
