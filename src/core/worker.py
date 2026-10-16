@@ -120,8 +120,8 @@ class DownloadWorker(QThread):
                             os.remove(live_chat_json)
                         except OSError:
                             pass
-            except Exception:
-                pass
+            except Exception as e:
+                self.log_message.emit("warning", f"[chat] Failed to convert live chat to subtitles: {e}")
         if saved:
             self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
 
@@ -452,8 +452,8 @@ class DownloadWorker(QThread):
                                     os.remove(live_chat_json)
                                 except OSError:
                                     pass
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.log_message.emit("warning", f"[chat] Failed to convert live chat to subtitles: {e}")
                 if saved:
                     self.log_message.emit("info", f"[chat] Converted live chat to smart subtitles: {os.path.basename(ass_path)}")
             self.download_finished.emit(self._task.id, self._task.output_dir, target)
@@ -468,7 +468,8 @@ class DownloadWorker(QThread):
             r = _sp.run(cmd, capture_output=True, text=True, timeout=10, creationflags=cflags)
             text = r.stderr or r.stdout
             return (": Video:" in text, ": Audio:" in text)
-        except Exception:
+        except Exception as e:
+            self.log_message.emit("warning", f"[live] Failed to inspect streams for {os.path.basename(path)}: {e}")
             return (False, False)
 
     def _finalize_live_stream(self) -> Optional[str]:
@@ -572,8 +573,8 @@ class DownloadWorker(QThread):
                         )
                         if res.returncode == 0 and os.path.exists(temp_jpg):
                             thumb_jpg = temp_jpg
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.log_message.emit("warning", f"[live] Failed to convert thumbnail: {e}")
 
         if video_files and audio_files and self._task.mode != "audio":
             vid = video_files[0]
@@ -616,8 +617,8 @@ class DownloadWorker(QThread):
                         except OSError: pass
                     os.replace(temp_target, target_file)
                     return target_file
-            except Exception:
-                pass
+            except Exception as e:
+                self.log_message.emit("warning", f"[live] ffmpeg mux failed: {e}")
 
         source_file = muxed_files[0] if muxed_files else primary_file
         cmd = [ffmpeg_bin, "-y", "-i", source_file]
@@ -657,8 +658,8 @@ class DownloadWorker(QThread):
                     except OSError: pass
                 os.replace(temp_target, target_file)
                 return target_file
-        except Exception:
-            pass
+        except Exception as e:
+            self.log_message.emit("warning", f"[live] ffmpeg copy failed: {e}")
 
         if thumb_jpg and thumb_jpg != orig_thumb and os.path.exists(thumb_jpg):
             try: os.remove(thumb_jpg)
@@ -674,7 +675,8 @@ class DownloadWorker(QThread):
                 except OSError: pass
             os.replace(primary_file, target_file)
             return target_file
-        except Exception:
+        except Exception as e:
+            self.log_message.emit("warning", f"[live] Failed to finalize output file: {e}")
             return primary_file
 
     def _salvage_live_file(self) -> Optional[str]:
@@ -697,8 +699,8 @@ class DownloadWorker(QThread):
                                     best_file = entry.path
                         except OSError:
                             pass
-        except Exception:
-            pass
+        except Exception as e:
+            self.log_message.emit("warning", f"[live] Failed during salvage scan: {e}")
         return best_file
 
 
@@ -934,8 +936,8 @@ class StreamlinkWorker(QThread):
                 except OSError:
                     pass
                 return mp4_path
-        except Exception:
-            pass
+        except Exception as e:
+            self.log_message.emit("warning", f"[streamlink] Failed to convert ts to mp4: {e}")
         return None
 
     def stop_and_save(self) -> None:

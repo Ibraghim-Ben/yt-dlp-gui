@@ -84,8 +84,8 @@ class QueueManager(QObject):
 
             try:
                 shutil.copy2(tasks_file, tasks_file.with_suffix(".bak"))
-            except OSError:
-                pass
+            except OSError as e:
+                self.log_message.emit("warning", f"Failed to create tasks backup: {e}")
 
             data = json.loads(tasks_file.read_text(encoding="utf-8"))
             for task_dict in data:
@@ -327,8 +327,8 @@ class QueueManager(QObject):
             if not worker.isRunning():
                 try:
                     worker._cleanup_partial_files()
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.log_message.emit("warning", f"Failed to cleanup partial files: {e}")
         task = self._tasks.get(task_id)
         if task:
             if task.status != DownloadStatus.DONE:
@@ -445,8 +445,8 @@ class QueueManager(QObject):
                     "ext": "CHKEXT",
                 })
             self._in_flight_templates.add(stem[: -len(".CHKEXT")])
-        except Exception:
-            pass
+        except Exception as e:
+            self.log_message.emit("warning", f"Failed to register in-flight template: {e}")
 
         needs_cookies = bool(
             task.video_info and getattr(task.video_info, "auth_required", False)
@@ -555,8 +555,8 @@ class QueueManager(QObject):
                         "ext": "CHKEXT",
                     })
                 self._in_flight_templates.discard(stem[: -len(".CHKEXT")])
-            except Exception:
-                pass
+            except Exception as e:
+                self.log_message.emit("warning", f"Failed to discard in-flight template: {e}")
         self._try_start_next()
 
     def has_active_tasks(self) -> bool:
