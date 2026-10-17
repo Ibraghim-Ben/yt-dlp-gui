@@ -69,12 +69,15 @@ def _setup_localization(app: QApplication, config: Config) -> tuple[QTranslator 
 
     qt_translator = QTranslator()
     qt_trans_path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
-    if not qt_translator.load("qtbase_ru", qt_trans_path):
+    loaded = qt_translator.load("qtbase_ru", qt_trans_path)
+    if not loaded:
         for b in base_dirs:
             qt_qm = b / "qtbase_ru.qm"
             if qt_qm.exists() and qt_translator.load(str(qt_qm)):
+                loaded = True
                 break
-    app.installTranslator(qt_translator)
+    if loaded:
+        app.installTranslator(qt_translator)
 
     return app_translator, qt_translator
 

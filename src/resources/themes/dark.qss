@@ -532,14 +532,6 @@ QProgressBar[taskStatus="cancelled"]::chunk   { background-color: #6c7086; borde
 
 QLabel[taskStatus="error"] { color: #f38ba8; }
 
-/* ── Log level colours ──────────────────────────────────────── */
-QColor#logWarning { color: #f9e2af; }
-QColor#logError   { color: #f38ba8; }
-
 /* ── Validation status (FFmpeg path check) ──────────────────── */
 QLabel[validationStatus="ok"]    { color: #a6e3a1; }
 QLabel[validationStatus="error"] { color: #f38ba8; }
-
-/* ── Format table row colours ───────────────────────────────── */
-QColor#audioRow { color: #a6e3a1; }
-QColor#videoRow { color: #89b4fa; }

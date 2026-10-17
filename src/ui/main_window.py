@@ -296,13 +296,6 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             self._format_selector.set_output_dir(self._config.output_dir)
 
-    def _show_about(self) -> None:
-        QMessageBox.about(
-            self,
-            self.tr("About yt-dlp GUI"),
-            self.tr("<b>yt-dlp GUI</b><br><br>A graphical interface for yt-dlp.<br><br>Built with Python + PyQt6."),
-        )
-
     def _has_valid_drag_data(self, mime_data) -> bool:
         if not mime_data:
             return False

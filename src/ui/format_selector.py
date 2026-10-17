@@ -508,6 +508,8 @@ class FormatSelector(QWidget):
         thread.start()
 
     def _on_thumb_loaded(self, data: bytes) -> None:
+        if self._video_info is None:
+            return
         px = QPixmap()
         if px.loadFromData(data) and not px.isNull():
             px.setDevicePixelRatio(self._thumb_label.devicePixelRatio())

@@ -4,7 +4,7 @@ import sys
 import subprocess
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QProgressBar, QPushButton, QSizePolicy, QMessageBox, QApplication,
+    QLabel, QProgressBar, QPushButton, QSizePolicy, QMessageBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF, QRectF, QSize
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
@@ -477,7 +477,6 @@ class DownloadQueue(QWidget):
         self._task_widgets[task.id] = widget
         self._task_items[task.id] = item
         self._list.scrollToBottom()
-        QApplication.processEvents()
 
     def update_task(self, task: DownloadTask) -> None:
         widget = self._task_widgets.get(task.id)
@@ -495,9 +494,6 @@ class DownloadQueue(QWidget):
         if item:
             row = self._list.row(item)
             self._list.takeItem(row)
-
-    def _on_cancel(self, task_id: str) -> None:
-        self.cancel_requested.emit(task_id)
 
     def _clear_done(self) -> None:
         done_ids = [

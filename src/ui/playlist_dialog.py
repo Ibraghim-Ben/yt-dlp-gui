@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QListWidget, QListWidgetItem, QCheckBox,
     QDialogButtonBox, QFrame,
 )
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QSize
 from ..core.models import VideoInfo, PlaylistEntry
 from ..utils.formatters import format_duration
 
@@ -83,7 +83,7 @@ class PlaylistDialog(QDialog):
 
         for entry in entries:
             item = QListWidgetItem()
-            item.setSizeHint(item.sizeHint().__class__(0, 32))
+            item.setSizeHint(QSize(0, 32))
             self._list.addItem(item)
 
             cb = QCheckBox()

@@ -351,43 +351,48 @@ class DownloadWorker(QThread):
                     ("szExeFile", ctypes.c_char * 260),
                 ]
 
+            snapshot_ok = False
             try:
                 kernel32 = ctypes.windll.kernel32
                 current_pid = os.getpid()
                 h_snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
                 if h_snap and h_snap != -1:
-                    pe = PROCESSENTRY32()
-                    pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
-                    if kernel32.Process32First(h_snap, ctypes.byref(pe)):
-                        while True:
-                            if pe.th32ParentProcessID == current_pid:
-                                exe_name = pe.szExeFile.decode("utf-8", errors="ignore").lower()
-                                if "ffmpeg" in exe_name:
-                                    hp = kernel32.OpenProcess(PROCESS_TERMINATE, False, pe.th32ProcessID)
-                                    if hp:
-                                        kernel32.TerminateProcess(hp, 0)
-                                        kernel32.CloseHandle(hp)
-                            if not kernel32.Process32Next(h_snap, ctypes.byref(pe)):
-                                break
-                    kernel32.CloseHandle(h_snap)
+                    try:
+                        pe = PROCESSENTRY32()
+                        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+                        if kernel32.Process32First(h_snap, ctypes.byref(pe)):
+                            while True:
+                                if pe.th32ParentProcessID == current_pid:
+                                    exe_name = pe.szExeFile.decode("utf-8", errors="ignore").lower()
+                                    if "ffmpeg" in exe_name:
+                                        hp = kernel32.OpenProcess(PROCESS_TERMINATE, False, pe.th32ProcessID)
+                                        if hp:
+                                            kernel32.TerminateProcess(hp, 0)
+                                            kernel32.CloseHandle(hp)
+                                if not kernel32.Process32Next(h_snap, ctypes.byref(pe)):
+                                    break
+                        snapshot_ok = True
+                    finally:
+                        kernel32.CloseHandle(h_snap)
             except Exception:
                 pass
 
-            try:
-                import subprocess
-                pid = os.getpid()
-                ps_cmd = (
-                    f"Get-CimInstance Win32_Process | "
-                    f"Where-Object {{ $_.ParentProcessId -eq {pid} -and $_.Name -like '*ffmpeg*' }} | "
-                    f"ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"
-                )
-                cflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-                subprocess.run(
-                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-                    capture_output=True, timeout=5, creationflags=cflags
-                )
-            except Exception:
-                pass
+            if not snapshot_ok:
+                try:
+                    import subprocess
+                    pid = os.getpid()
+                    ps_cmd = (
+                        f"Get-CimInstance Win32_Process | "
+                        f"Where-Object {{ $_.ParentProcessId -eq {pid} -and $_.Name -like '*ffmpeg*' }} | "
+                        f"ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"
+                    )
+                    cflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                    subprocess.run(
+                        ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                        capture_output=True, timeout=5, creationflags=cflags
+                    )
+                except Exception:
+                    pass
         else:
             import subprocess
             try:
