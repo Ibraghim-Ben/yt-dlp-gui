@@ -93,7 +93,7 @@ def run() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("yt-dlp GUI")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion("0.2.0")
     app.setStyle("Fusion")
 
     icon_path = _get_icon_path()
