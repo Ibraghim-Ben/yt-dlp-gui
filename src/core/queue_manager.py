@@ -239,6 +239,25 @@ class QueueManager(QObject):
         else:
             self._try_start_next()
 
+    def retry_task(self, task_id: str) -> None:
+        task = self._tasks.get(task_id)
+        if not task:
+            return
+        worker = self._workers.get(task_id)
+        if worker and worker.isRunning():
+            return
+        task.status = DownloadStatus.QUEUED
+        task.error_message = ""
+        task.progress = 0.0
+        task.speed = ""
+        task.eta = ""
+        self.task_updated.emit(task_id, task)
+        self._save_tasks()
+        if self._active_count() < self._config.max_parallel:
+            self._start_task(task)
+        else:
+            self._try_start_next()
+
     def _cleanup_task_files(self, task: DownloadTask) -> None:
         import re
 

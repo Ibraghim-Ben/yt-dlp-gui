@@ -122,6 +122,7 @@ class MainWindow(QMainWindow):
         self._dl_queue = DownloadQueue()
         self._dl_queue.pause_requested.connect(self._queue.pause_task)
         self._dl_queue.resume_requested.connect(self._queue.resume_task)
+        self._dl_queue.retry_requested.connect(self._queue.retry_task)
         self._dl_queue.cancel_requested.connect(self._queue.cancel_task)
         self._dl_queue.stop_live_requested.connect(self._queue.stop_live_task)
         self._dl_queue.remove_requested.connect(self._queue.remove_task)

@@ -144,10 +144,24 @@ class ActionButton(QPushButton):
                 QPointF(cx - 2.5, cy + 3.5),
             ]
             painter.drawPolygon(points)
+        elif self._icon_type == "retry":
+            pen = QPen(fg, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawArc(QRectF(cx - 4.2, cy - 4.2, 8.4, 8.4), 45 * 16, 270 * 16)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(fg))
+            points = [
+                QPointF(cx + 0.5, cy - 5.8),
+                QPointF(cx + 5.0, cy - 3.8),
+                QPointF(cx + 1.5, cy - 1.8),
+            ]
+            painter.drawPolygon(points)
 
 class TaskItemWidget(QWidget):
     pause_clicked = pyqtSignal(str)
     resume_clicked = pyqtSignal(str)
+    retry_clicked = pyqtSignal(str)
     cancel_clicked = pyqtSignal(str)
     remove_clicked = pyqtSignal(str)
     stop_live_clicked = pyqtSignal(str)
@@ -335,6 +349,11 @@ class TaskItemWidget(QWidget):
             self._pause_btn.setEnabled(True)
             self._pause_btn.set_icon_type("pause")
             self._pause_btn.setToolTip(self.tr("Pause"))
+        elif task.status == DownloadStatus.ERROR:
+            self._pause_btn.setVisible(True)
+            self._pause_btn.setEnabled(True)
+            self._pause_btn.set_icon_type("retry")
+            self._pause_btn.setToolTip(self.tr("Retry"))
         else:
             self._pause_btn.setVisible(False)
 
@@ -355,7 +374,10 @@ class TaskItemWidget(QWidget):
             )
 
     def _on_pause_toggle(self) -> None:
-        if self._status == DownloadStatus.PAUSED:
+        if self._status == DownloadStatus.ERROR:
+            self._pause_btn.setEnabled(False)
+            self.retry_clicked.emit(self._task_id)
+        elif self._status == DownloadStatus.PAUSED:
             self._pause_btn.setEnabled(False)
             self.resume_clicked.emit(self._task_id)
         elif self._status in (DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED):
@@ -422,6 +444,7 @@ class TaskItemWidget(QWidget):
 class DownloadQueue(QWidget):
     pause_requested = pyqtSignal(str)
     resume_requested = pyqtSignal(str)
+    retry_requested = pyqtSignal(str)
     cancel_requested = pyqtSignal(str)
     stop_live_requested = pyqtSignal(str)
     remove_requested = pyqtSignal(str)
@@ -465,6 +488,7 @@ class DownloadQueue(QWidget):
         widget = TaskItemWidget(task)
         widget.pause_clicked.connect(self.pause_requested)
         widget.resume_clicked.connect(self.resume_requested)
+        widget.retry_clicked.connect(self.retry_requested)
         widget.cancel_clicked.connect(self.cancel_requested)
         widget.stop_live_clicked.connect(self.stop_live_requested)
         widget.remove_clicked.connect(self.remove_requested)
