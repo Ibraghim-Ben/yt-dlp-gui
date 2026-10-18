@@ -1,7 +1,12 @@
 import os
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('src/resources', 'src/resources')]
+datas = [
+    ('src/resources/themes', 'src/resources/themes'),
+    ('src/resources/translations/*.qm', 'src/resources/translations'),
+    ('src/resources/app_icon.ico', 'src/resources'),
+    ('src/resources/app_icon.png', 'src/resources'),
+]
 binaries = []
 hiddenimports = [
     'curl_cffi',
@@ -43,6 +48,11 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
+a.binaries = [
+    x for x in a.binaries
+    if not any(dll in x[0].lower() for dll in ('opengl32sw.dll', 'd3dcompiler_47.dll'))
+]
 pyz = PYZ(a.pure)
 
 exe = EXE(
