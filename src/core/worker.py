@@ -409,6 +409,16 @@ class DownloadWorker(QThread):
     def pause(self) -> None:
         self._paused = True
 
+    def set_rate_limit(self, limit_bytes: Optional[int]) -> None:
+        self._ydl_opts["ratelimit"] = limit_bytes
+        if self._ydl:
+            self._ydl.params["ratelimit"] = limit_bytes
+            downloaders = getattr(self._ydl, "_downloaders", {})
+            if isinstance(downloaders, dict):
+                for d in downloaders.values():
+                    if hasattr(d, "params") and isinstance(d.params, dict):
+                        d.params["ratelimit"] = limit_bytes
+
     def _start_youtube_chat_recording(self) -> None:
         try:
             from .chat_recorder import YouTubeChatRecorder

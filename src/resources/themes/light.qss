@@ -248,6 +248,20 @@ QProgressBar#taskProgress::chunk {
     border-radius: 2px;
 }
 
+QPushButton#taskLimitBtn {
+    background-color: transparent;
+    color: #1e66f5;
+    border: 1px solid #bcc0cc;
+    border-radius: 3px;
+    padding: 0px 5px;
+    font-size: 8pt;
+}
+
+QPushButton#taskLimitBtn:hover {
+    background-color: #dce0e8;
+    border-color: #1e66f5;
+}
+
 QWidget#taskItemWidget {
     background-color: transparent;
 }

@@ -362,13 +362,21 @@ def build_ydl_opts(
         opts["cookiesfrombrowser"] = (cookies_browser,)
 
     if rate_limit:
-        try:
-            val = float(rate_limit[:-1])
-            unit = rate_limit[-1].upper()
-            mult = 1024 if unit == "K" else 1024 * 1024
-            opts["ratelimit"] = int(val * mult)
-        except ValueError:
-            log_callback("warning", f"Invalid rate limit in config, ignoring: {rate_limit}")
+        if isinstance(rate_limit, (int, float)):
+            opts["ratelimit"] = int(rate_limit)
+        else:
+            from ..utils.formatters import parse_speed_limit
+            parsed = parse_speed_limit(str(rate_limit))
+            if parsed:
+                opts["ratelimit"] = parsed
+            else:
+                try:
+                    val = float(rate_limit[:-1])
+                    unit = rate_limit[-1].upper()
+                    mult = 1024 if unit == "K" else 1024 * 1024
+                    opts["ratelimit"] = int(val * mult)
+                except (ValueError, TypeError):
+                    log_callback("warning", f"Invalid rate limit in config, ignoring: {rate_limit}")
 
     if archive_file:
         opts["download_archive"] = archive_file

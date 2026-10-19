@@ -126,6 +126,7 @@ class MainWindow(QMainWindow):
         self._dl_queue.cancel_requested.connect(self._queue.cancel_task)
         self._dl_queue.stop_live_requested.connect(self._queue.stop_live_task)
         self._dl_queue.remove_requested.connect(self._queue.remove_task)
+        self._dl_queue.set_limit_requested.connect(self._queue.set_task_rate_limit)
         self._main_splitter.addWidget(self._dl_queue)
 
         self._main_splitter.setSizes([520, 520])

@@ -1,13 +1,15 @@
 from __future__ import annotations
+from typing import Optional
 import os
 import sys
 import subprocess
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QLabel, QProgressBar, QPushButton, QSizePolicy, QMessageBox,
+    QLineEdit, QMenu, QDialog, QComboBox, QDialogButtonBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF, QRectF, QSize
-from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
+from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QDoubleValidator
 from ..core.models import DownloadTask, DownloadStatus
 
 def show_in_folder(path: str) -> None:
@@ -158,6 +160,81 @@ class ActionButton(QPushButton):
             ]
             painter.drawPolygon(points)
 
+
+class SpeedLimitDialog(QDialog):
+    def __init__(self, current_limit: Optional[int], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Speed Limit"))
+        self.setFixedWidth(280)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        lbl = QLabel(self.tr("Enter speed limit for this task:"))
+        layout.addWidget(lbl)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+
+        self._input = QLineEdit()
+        self._input.setPlaceholderText(self.tr("0 = unlimited"))
+        validator = QDoubleValidator(0.0, 999999.0, 2, self)
+        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        self._input.setValidator(validator)
+        row.addWidget(self._input, 1)
+
+        self._unit_combo = QComboBox()
+        self._unit_combo.addItem(self.tr("MB/s"), 1024 * 1024)
+        self._unit_combo.addItem(self.tr("KB/s"), 1024)
+        self._unit_combo.addItem(self.tr("GB/s"), 1024 * 1024 * 1024)
+        self._unit_combo.setFixedWidth(75)
+        row.addWidget(self._unit_combo)
+
+        layout.addLayout(row)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        if current_limit and current_limit > 0:
+            if current_limit >= 1024 * 1024 * 1024 and current_limit % (1024 * 1024 * 1024) == 0:
+                self._input.setText(str(current_limit // (1024 * 1024 * 1024)))
+                self._unit_combo.setCurrentIndex(2)
+            elif current_limit >= 1024 * 1024:
+                val = current_limit / (1024 * 1024)
+                self._input.setText(f"{val:.2f}".rstrip("0").rstrip("."))
+                self._unit_combo.setCurrentIndex(0)
+            elif current_limit >= 1024:
+                val = current_limit / 1024
+                self._input.setText(f"{val:.2f}".rstrip("0").rstrip("."))
+                self._unit_combo.setCurrentIndex(1)
+            else:
+                self._input.setText(str(current_limit))
+                self._unit_combo.setCurrentIndex(1)
+        else:
+            self._unit_combo.setCurrentIndex(0)
+
+        self._input.selectAll()
+        self._input.setFocus()
+
+    def get_limit_bytes(self) -> Optional[int]:
+        text = self._input.text().strip().replace(",", ".")
+        if not text:
+            return None
+        try:
+            val = float(text)
+            if val <= 0:
+                return None
+            multiplier = self._unit_combo.currentData()
+            return int(val * multiplier)
+        except ValueError:
+            return None
+
+
 class TaskItemWidget(QWidget):
     pause_clicked = pyqtSignal(str)
     resume_clicked = pyqtSignal(str)
@@ -165,6 +242,7 @@ class TaskItemWidget(QWidget):
     cancel_clicked = pyqtSignal(str)
     remove_clicked = pyqtSignal(str)
     stop_live_clicked = pyqtSignal(str)
+    set_limit_clicked = pyqtSignal(str, object)
 
     def __init__(self, task: DownloadTask, parent=None):
         super().__init__(parent)
@@ -261,6 +339,14 @@ class TaskItemWidget(QWidget):
         self._eta_label = QLabel()
         self._eta_label.setObjectName("taskEta")
         bot.addWidget(self._eta_label)
+
+        self._limit_btn = QPushButton()
+        self._limit_btn.setObjectName("taskLimitBtn")
+        self._limit_btn.setFixedHeight(18)
+        self._limit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._limit_btn.clicked.connect(self._on_set_limit)
+        bot.addWidget(self._limit_btn)
+
         bot.addStretch()
 
         self._error_label = QLabel()
@@ -326,6 +412,18 @@ class TaskItemWidget(QWidget):
             self._live_badge.setVisible(False)
             self._speed_label.setText("")
             self._eta_label.setText("")
+
+        self._rate_limit = getattr(task, "rate_limit", None)
+        is_active = task.status in (DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED, DownloadStatus.PAUSED)
+        self._limit_btn.setVisible(is_active)
+        if self._rate_limit:
+            from ..utils.formatters import format_speed_limit
+            fmt_limit = format_speed_limit(self._rate_limit)
+            self._limit_btn.setText(f"⚡ {fmt_limit}")
+            self._limit_btn.setToolTip(f"{self.tr('Speed limit:')} {fmt_limit} ({self.tr('click to change')})")
+        else:
+            self._limit_btn.setText("⚡ Max")
+            self._limit_btn.setToolTip(self.tr("Click to set speed limit (e.g. 500K, 2M, 0 for unlimited)"))
 
         if task.status == DownloadStatus.ERROR:
             self._error_label.setText(task.error_message)
@@ -440,6 +538,22 @@ class TaskItemWidget(QWidget):
         else:
             self.remove_clicked.emit(self._task_id)
 
+    def _on_set_limit(self) -> None:
+        dlg = SpeedLimitDialog(self._rate_limit, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            limit_bytes = dlg.get_limit_bytes()
+            self._rate_limit = limit_bytes
+            self.set_limit_clicked.emit(self._task_id, limit_bytes)
+
+    def contextMenuEvent(self, event) -> None:
+        if self._status in (DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED, DownloadStatus.PAUSED):
+            menu = QMenu(self)
+            act = menu.addAction(self.tr("Set speed limit…"))
+            act.triggered.connect(self._on_set_limit)
+            menu.exec(event.globalPos())
+        else:
+            super().contextMenuEvent(event)
+
 
 class DownloadQueue(QWidget):
     pause_requested = pyqtSignal(str)
@@ -448,6 +562,7 @@ class DownloadQueue(QWidget):
     cancel_requested = pyqtSignal(str)
     stop_live_requested = pyqtSignal(str)
     remove_requested = pyqtSignal(str)
+    set_limit_requested = pyqtSignal(str, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -492,6 +607,7 @@ class DownloadQueue(QWidget):
         widget.cancel_clicked.connect(self.cancel_requested)
         widget.stop_live_clicked.connect(self.stop_live_requested)
         widget.remove_clicked.connect(self.remove_requested)
+        widget.set_limit_clicked.connect(self.set_limit_requested)
 
         item = QListWidgetItem()
         item.setSizeHint(widget.sizeHint())

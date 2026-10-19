@@ -193,3 +193,4 @@ class DownloadTask:
     is_live: bool = False
     live_from_start: bool = True
     record_chat: bool = True
+    rate_limit: Optional[int] = None

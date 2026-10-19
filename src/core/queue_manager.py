@@ -67,6 +67,7 @@ class QueueManager(QObject):
                     "is_live": getattr(task, "is_live", False),
                     "live_from_start": getattr(task, "live_from_start", True),
                     "record_chat": getattr(task, "record_chat", True),
+                    "rate_limit": getattr(task, "rate_limit", None),
                 }
                 data.append(task_dict)
             
@@ -117,6 +118,7 @@ class QueueManager(QObject):
                         is_live=task_dict.get("is_live", False),
                         live_from_start=task_dict.get("live_from_start", True),
                         record_chat=task_dict.get("record_chat", True),
+                        rate_limit=task_dict.get("rate_limit"),
                     )
                     self._tasks[task.id] = task
                     self._order.append(task.id)
@@ -257,6 +259,17 @@ class QueueManager(QObject):
             self._start_task(task)
         else:
             self._try_start_next()
+
+    def set_task_rate_limit(self, task_id: str, limit_bytes: Optional[int]) -> None:
+        task = self._tasks.get(task_id)
+        if not task:
+            return
+        task.rate_limit = limit_bytes
+        worker = self._workers.get(task_id)
+        if worker and hasattr(worker, "set_rate_limit"):
+            worker.set_rate_limit(limit_bytes)
+        self.task_updated.emit(task_id, task)
+        self._save_tasks()
 
     def _cleanup_task_files(self, task: DownloadTask) -> None:
         import re
@@ -480,7 +493,7 @@ class QueueManager(QObject):
             target_ext=task.target_ext,
             ffmpeg_path=cfg.ffmpeg_path or find_ffmpeg(),
             cookies_browser=cfg.cookies_browser if needs_cookies else None,
-            rate_limit=cfg.rate_limit or None,
+            rate_limit=task.rate_limit if task.rate_limit is not None else (cfg.rate_limit or None),
             embed_thumbnail=task.embed_thumbnail,
             embed_metadata=task.embed_metadata,
             embed_subs=task.embed_subs,

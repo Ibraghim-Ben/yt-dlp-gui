@@ -223,6 +223,20 @@ QPushButton#clearDoneBtn:hover {
     background-color: #313244;
 }
 
+QPushButton#taskLimitBtn {
+    background-color: transparent;
+    color: #89b4fa;
+    border: 1px solid #45475a;
+    border-radius: 3px;
+    padding: 0px 5px;
+    font-size: 8pt;
+}
+
+QPushButton#taskLimitBtn:hover {
+    background-color: #313244;
+    border-color: #89b4fa;
+}
+
 QTableView {
     background-color: #181825;
     alternate-background-color: #1e1e2e;
