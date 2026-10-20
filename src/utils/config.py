@@ -22,6 +22,7 @@ class Config:
     download_archive: str = ""
     window_geometry: str = ""
     clipboard_monitor: bool = False
+    close_to_tray: bool = True
     language: str = "auto"
     corrupted_backup_path: str = field(default="", repr=False, compare=False)
 
@@ -34,6 +35,8 @@ class Config:
             self.window_geometry = ""
         if not isinstance(self.clipboard_monitor, bool):
             self.clipboard_monitor = bool(self.clipboard_monitor)
+        if not isinstance(self.close_to_tray, bool):
+            self.close_to_tray = bool(self.close_to_tray)
         if self.language not in ("auto", "en", "ru"):
             self.language = "auto"
 

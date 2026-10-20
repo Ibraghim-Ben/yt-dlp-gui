@@ -92,6 +92,7 @@ def run() -> int:
             pass
 
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("yt-dlp GUI")
     app.setApplicationVersion("0.2.0")
     app.setStyle("Fusion")

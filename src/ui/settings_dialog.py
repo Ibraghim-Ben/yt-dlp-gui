@@ -78,6 +78,9 @@ class SettingsDialog(QDialog):
         self._clipboard_check = QCheckBox(self.tr("Auto-detect copied video links on window focus"))
         form.addRow(self.tr("Clipboard:"), self._clipboard_check)
 
+        self._tray_check = QCheckBox(self.tr("Close to system tray"))
+        form.addRow(self.tr("System tray:"), self._tray_check)
+
         return w
 
     def _network_tab(self) -> QWidget:
@@ -194,6 +197,7 @@ class SettingsDialog(QDialog):
 
         self._ffmpeg_path.setText(cfg.ffmpeg_path or "")
         self._clipboard_check.setChecked(cfg.clipboard_monitor)
+        self._tray_check.setChecked(cfg.close_to_tray)
         self._initial_state = self._get_current_state()
 
     def _get_current_state(self) -> tuple:
@@ -207,6 +211,7 @@ class SettingsDialog(QDialog):
             self._cookies_browser.currentText(),
             self._ffmpeg_path.text(),
             self._clipboard_check.isChecked(),
+            self._tray_check.isChecked(),
         )
 
     def _has_unsaved_changes(self) -> bool:
@@ -221,6 +226,7 @@ class SettingsDialog(QDialog):
         cfg.theme = self._theme_combo.currentText()
         cfg.max_parallel = self._parallel_spin.value()
         cfg.clipboard_monitor = self._clipboard_check.isChecked()
+        cfg.close_to_tray = self._tray_check.isChecked()
         lang_changed = cfg.language != self._lang_combo.currentData()
         cfg.language = self._lang_combo.currentData()
         

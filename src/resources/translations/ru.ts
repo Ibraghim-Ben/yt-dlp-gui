@@ -350,6 +350,22 @@
             <translation>Не удалось сохранить конфигурацию при выходе:
 %s</translation>
         </message>
+        <message>
+            <source>Open</source>
+            <translation>Открыть</translation>
+        </message>
+        <message>
+            <source>Pause all</source>
+            <translation>Приостановить все</translation>
+        </message>
+        <message>
+            <source>Resume all</source>
+            <translation>Возобновить все</translation>
+        </message>
+        <message>
+            <source>Exit</source>
+            <translation>Выход</translation>
+        </message>
     </context>
     <context>
         <name>PlaylistDialog</name>
@@ -439,6 +455,14 @@
         <message>
             <source>Clipboard:</source>
             <translation>Буфер обмена:</translation>
+        </message>
+        <message>
+            <source>Close to system tray</source>
+            <translation>Сворачивать в трей при закрытии</translation>
+        </message>
+        <message>
+            <source>System tray:</source>
+            <translation>Системный трей:</translation>
         </message>
         <message>
             <source>Unlimited</source>

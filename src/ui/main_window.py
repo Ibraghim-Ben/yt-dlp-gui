@@ -4,6 +4,7 @@ from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QSplitter,
     QStatusBar, QToolBar, QMessageBox, QFrame, QLabel, QDialog, QPushButton,
+    QSystemTrayIcon, QMenu,
 )
 from PyQt6.QtCore import Qt, QSize, QByteArray, QEvent, QObject
 from PyQt6.QtGui import (
@@ -13,7 +14,7 @@ from PyQt6.QtGui import (
 from ..utils.config import Config
 from ..core.queue_manager import QueueManager
 from ..core.worker import AnalyzeWorker
-from ..core.models import VideoInfo, FormatInfo, PlaylistEntry
+from ..core.models import VideoInfo, FormatInfo, PlaylistEntry, DownloadStatus
 from ..core.container_rules import resolve_container
 from ..core.ffmpeg_utils import find_ffmpeg
 
@@ -41,6 +42,8 @@ class MainWindow(QMainWindow):
         self._analyze_worker: Optional[AnalyzeWorker] = None
         self._current_video: Optional[VideoInfo] = None
         self._last_clipboard_url: str = _normalize_url(QApplication.clipboard().text().strip()) or ""
+        self._force_quit: bool = False
+        self._tray: Optional[QSystemTrayIcon] = None
 
         self.setWindowTitle("yt-dlp GUI")
         if not QApplication.windowIcon().isNull():
@@ -55,12 +58,20 @@ class MainWindow(QMainWindow):
         self._build_central()
         self._build_statusbar()
         self._connect_queue()
+        self._setup_tray()
 
         if config.window_geometry:
             try:
                 self.restoreGeometry(QByteArray(base64.b64decode(config.window_geometry)))
             except Exception:
                 pass
+
+    def setWindowIcon(self, icon) -> None:
+        super().setWindowIcon(icon)
+        if hasattr(self, "_tray") and self._tray is not None:
+            self._tray.setIcon(icon)
+            if not self._tray.isVisible():
+                self._tray.show()
 
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
@@ -154,10 +165,13 @@ class MainWindow(QMainWindow):
 
     def _connect_queue(self) -> None:
         self._queue.task_added.connect(self._dl_queue.add_task)
+        self._queue.task_added.connect(self._update_tray_pause_action)
         self._queue.task_updated.connect(
             lambda tid, task: self._dl_queue.update_task(task)
         )
+        self._queue.task_updated.connect(self._update_tray_pause_action)
         self._queue.task_removed.connect(self._dl_queue.remove_task)
+        self._queue.task_removed.connect(self._update_tray_pause_action)
         self._queue.log_message.connect(self._log_panel.append)
         
         for task in self._queue.tasks_in_order():
@@ -437,8 +451,71 @@ class MainWindow(QMainWindow):
         self._url_bar.set_url(normalized)
         self._on_analyze(normalized)
 
-    def closeEvent(self, event) -> None:
+    def _setup_tray(self) -> None:
+        self._tray = QSystemTrayIcon(self)
+        self._tray.setToolTip("yt-dlp GUI")
+
+        tray_menu = QMenu(self)
+        restore_act = tray_menu.addAction(self.tr("Open"))
+        restore_act.triggered.connect(self._restore_from_tray)
+
+        self._tray_pause_act = tray_menu.addAction(self.tr("Pause all"))
+        self._tray_pause_act.triggered.connect(self._toggle_queue_pause)
+
+        tray_menu.addSeparator()
+
+        exit_act = tray_menu.addAction(self.tr("Exit"))
+        exit_act.triggered.connect(self._exit_app)
+
+        self._tray.setContextMenu(tray_menu)
+        self._tray.activated.connect(self._on_tray_activated)
+        self._update_tray_pause_action()
+
+    def _restore_from_tray(self) -> None:
+        self.show()
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized | Qt.WindowState.WindowActive)
+        self.raise_()
+        self.activateWindow()
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            if self.isVisible() and not self.isMinimized() and self.isActiveWindow():
+                self.hide()
+            else:
+                self._restore_from_tray()
+
+    def _toggle_queue_pause(self) -> None:
         if self._queue.has_active_tasks():
+            self._queue.pause_all()
+        else:
+            self._queue.resume_all()
+        self._update_tray_pause_action()
+
+    def _update_tray_pause_action(self, *args) -> None:
+        if not hasattr(self, "_tray_pause_act") or self._tray_pause_act is None:
+            return
+        if self._queue.has_active_tasks():
+            self._tray_pause_act.setText(self.tr("Pause all"))
+        else:
+            has_paused = any(t.status == DownloadStatus.PAUSED for t in self._queue.tasks_in_order())
+            if has_paused:
+                self._tray_pause_act.setText(self.tr("Resume all"))
+            else:
+                self._tray_pause_act.setText(self.tr("Pause all"))
+
+    def _exit_app(self) -> None:
+        self._force_quit = True
+        self.close()
+
+    def closeEvent(self, event) -> None:
+        if not self._force_quit and self._config.close_to_tray and self._tray is not None:
+            self.hide()
+            event.ignore()
+            return
+        if self._queue.has_active_tasks():
+            self.show()
+            self.raise_()
+            self.activateWindow()
             reply = QMessageBox.question(
                 self,
                 self.tr("Active Downloads"),
@@ -446,6 +523,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
+                self._force_quit = False
                 event.ignore()
                 return
             self._queue.cancel_all()
@@ -454,4 +532,7 @@ class MainWindow(QMainWindow):
             self._config.save()
         except Exception as e:
             QMessageBox.warning(self, self.tr("Save Settings Failed"), self.tr("Could not save configuration during exit:\n%s") % e)
+        if self._tray:
+            self._tray.hide()
         event.accept()
+        QApplication.instance().quit()

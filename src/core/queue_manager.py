@@ -241,6 +241,18 @@ class QueueManager(QObject):
         else:
             self._try_start_next()
 
+    def pause_all(self) -> None:
+        for tid in list(self._order):
+            task = self._tasks.get(tid)
+            if task and task.status in (DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED):
+                self.pause_task(tid)
+
+    def resume_all(self) -> None:
+        for tid in list(self._order):
+            task = self._tasks.get(tid)
+            if task and task.status == DownloadStatus.PAUSED:
+                self.resume_task(tid)
+
     def retry_task(self, task_id: str) -> None:
         task = self._tasks.get(task_id)
         if not task:
