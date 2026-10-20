@@ -9,6 +9,7 @@ from PyQt6.QtCore import QTranslator, QLocale, QLibraryInfo
 
 from .utils.config import Config
 from .utils.theme import load_theme
+from .utils.translation_utils import ensure_qm_compiled
 from .core.queue_manager import QueueManager
 from .core.ffmpeg_utils import find_ffmpeg, setup_bundled_binaries
 from .ui.main_window import MainWindow
@@ -63,6 +64,9 @@ def _setup_localization(app: QApplication, config: Config) -> tuple[QTranslator 
     app_translator = QTranslator()
     for b in base_dirs:
         ru_qm = b / "ru.qm"
+        ru_ts = b / "ru.ts"
+        if ru_ts.exists():
+            ensure_qm_compiled(ru_ts, ru_qm)
         if ru_qm.exists() and app_translator.load(str(ru_qm)):
             app.installTranslator(app_translator)
             break

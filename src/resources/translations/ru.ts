@@ -277,6 +277,10 @@
             <translation>Настройки</translation>
         </message>
         <message>
+            <source>Statistics</source>
+            <translation>Статистика</translation>
+        </message>
+        <message>
             <source>Log</source>
             <translation>Журнал</translation>
         </message>
@@ -673,4 +677,70 @@ Reason: %s</source>
             <translation>Анализ…</translation>
         </message>
     </context>
-</TS>
+    <context>
+        <name>StatBarChart</name>
+        <message>
+            <source>files</source>
+            <translation>файлов</translation>
+        </message>
+        <message>
+            <source>No download activity</source>
+            <translation>Нет данных о загрузках</translation>
+        </message>
+    </context>
+    <context>
+        <name>StatsDialog</name>
+        <message>
+            <source>Download Statistics</source>
+            <translation>Статистика загрузок</translation>
+        </message>
+        <message>
+            <source>Period:</source>
+            <translation>Период:</translation>
+        </message>
+        <message>
+            <source>Last 7 days</source>
+            <translation>Последние 7 дней</translation>
+        </message>
+        <message>
+            <source>Last 30 days</source>
+            <translation>Последние 30 дней</translation>
+        </message>
+        <message>
+            <source>All time</source>
+            <translation>За всё время</translation>
+        </message>
+        <message>
+            <source>Clear statistics</source>
+            <translation>Очистить статистику</translation>
+        </message>
+        <message>
+            <source>Total downloaded</source>
+            <translation>Всего скачано</translation>
+        </message>
+        <message>
+            <source>Downloaded files</source>
+            <translation>Скачано файлов</translation>
+        </message>
+        <message>
+            <source>Daily average</source>
+            <translation>В среднем за день</translation>
+        </message>
+        <message>
+            <source>Daily Activity</source>
+            <translation>Активность по дням</translation>
+        </message>
+        <message>
+            <source>Close</source>
+            <translation>Закрыть</translation>
+        </message>
+        <message>
+            <source>day</source>
+            <translation>день</translation>
+        </message>
+        <message>
+            <source>Are you sure you want to clear all download statistics?</source>
+            <translation>Вы уверены, что хотите очистить всю статистику загрузок?</translation>
+        </message>
+    </context>
+</TS>

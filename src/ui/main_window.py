@@ -23,6 +23,7 @@ from .format_selector import FormatSelector
 from .download_queue import DownloadQueue
 from .log_panel import LogPanel
 from .settings_dialog import SettingsDialog
+from .stats_dialog import StatsDialog
 from .playlist_dialog import PlaylistDialog
 from .drop_overlay import DropOverlay
 
@@ -86,6 +87,11 @@ class MainWindow(QMainWindow):
         settings_act.setToolTip("")
         settings_act.triggered.connect(self._open_settings)
         tb.addAction(settings_act)
+
+        stats_act = QAction("📊  " + self.tr("Statistics"), self)
+        stats_act.setToolTip("")
+        stats_act.triggered.connect(self._open_stats)
+        tb.addAction(stats_act)
 
         tb.addSeparator()
 
@@ -311,6 +317,10 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self._config, parent=self)
         if dlg.exec():
             self._format_selector.set_output_dir(self._config.output_dir)
+
+    def _open_stats(self) -> None:
+        dlg = StatsDialog(self._queue.stats, parent=self)
+        dlg.exec()
 
     def _has_valid_drag_data(self, mime_data) -> bool:
         if not mime_data:

@@ -13,6 +13,7 @@ from .models import DownloadTask, DownloadStatus
 from .worker import DownloadWorker, StreamlinkWorker, is_twitch_live_url, find_streamlink
 from .downloader import build_ydl_opts
 from .ffmpeg_utils import find_ffmpeg
+from .stats_manager import StatsManager
 
 
 class QueueManager(QObject):
@@ -24,11 +25,16 @@ class QueueManager(QObject):
     def __init__(self, config: "Config", parent=None):
         super().__init__(parent)
         self._config = config
+        self._stats = StatsManager(config.data_dir)
         self._tasks: dict[str, DownloadTask] = {}
         self._workers: dict[str, DownloadWorker | StreamlinkWorker] = {}
         self._order: list[str] = []
         self._in_flight_templates: set[str] = set()
         self._load_tasks()
+
+    @property
+    def stats(self) -> StatsManager:
+        return self._stats
 
     def _save_tasks(self) -> None:
         try:
@@ -569,6 +575,7 @@ class QueueManager(QObject):
             task.status = DownloadStatus.DONE
             task.progress = 100.0
             task.file_path = file_path if (file_path and os.path.isfile(file_path)) else output_dir
+            self._stats.record(task)
             self.task_updated.emit(task_id, task)
             self._save_tasks()
 
