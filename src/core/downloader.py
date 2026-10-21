@@ -31,27 +31,26 @@ def _classify_media_type(fmt: dict) -> Optional[MediaType]:
     resolution = str(fmt.get("resolution") or "").lower()
     format_note = str(fmt.get("format_note") or "").lower()
 
-    if resolution == "audio only" or "audio only" in format_note or vcodec == "none":
-        return MediaType.AUDIO_ONLY
-
-    if acodec == "none":
-        return MediaType.VIDEO_ONLY
-
     has_video = bool(vcodec) and vcodec != "none"
     has_audio = bool(acodec) and acodec != "none"
 
     if has_video and has_audio:
         return MediaType.VIDEO
-    if has_video:
+    if has_video and not has_audio:
         return MediaType.VIDEO_ONLY
-    if has_audio:
+    if has_audio and not has_video:
+        return MediaType.AUDIO_ONLY
+
+    is_audio_hint = resolution == "audio only" or "audio only" in format_note
+    if is_audio_hint and not has_video and has_audio:
         return MediaType.AUDIO_ONLY
 
     ext = fmt.get("ext", "").lower()
-    if ext in ("mp3", "m4a", "ogg", "opus", "wav", "flac"):
+    if ext in ("mp3", "m4a", "ogg", "opus", "wav", "flac") and not has_video:
         return MediaType.AUDIO_ONLY
-    if ext in ("mp4", "mkv", "webm", "mov", "avi", "flv"):
-        return MediaType.VIDEO
+    if ext in ("mp4", "mkv", "webm", "mov", "avi", "flv") and has_video:
+        return MediaType.VIDEO_ONLY
+
     return None
 
 
@@ -417,9 +416,10 @@ def build_ydl_opts(
         })
     if embed_thumbnail:
         supported_exts = ("mp3", "mkv", "mka", "ogg", "opus", "flac", "m4a", "mp4", "mov", "m4v")
-        if not target_ext or target_ext.lower() in supported_exts:
+        eff_ext = (target_ext or "").lower().lstrip(".")
+        if eff_ext in supported_exts or (not eff_ext and mode != "audio"):
             postprocessors.append({"key": "EmbedThumbnail"})
-            opts["writethumbnail"] = True
+        opts["writethumbnail"] = True
     if embed_subs:
         if subs_langs.strip() == "all":
             opts["writesubtitles"] = True
