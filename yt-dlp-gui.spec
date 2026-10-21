@@ -46,7 +46,7 @@ a = Analysis(
         "PyQt6.QtMultimedia", "PyQt6.QtWebEngine",
     ],
     noarchive=False,
-    optimize=0,
+    optimize=2,
 )
 
 a.binaries = [
