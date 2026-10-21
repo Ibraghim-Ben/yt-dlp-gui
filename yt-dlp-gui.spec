@@ -48,9 +48,23 @@ a = Analysis(
     optimize=2,
 )
 
+BLOCKED_BINARIES = {
+    'opengl32sw.dll',
+    'd3dcompiler_47.dll',
+    'qt6pdf.dll',
+    'qpdf.dll',
+    'qtiff.dll',
+    'qicns.dll',
+    'qwbmp.dll',
+    'qtga.dll',
+    'qminimal.dll',
+    'qoffscreen.dll',
+    'qtuiotouchplugin.dll',
+}
+
 a.binaries = [
     x for x in a.binaries
-    if not any(dll in x[0].lower() for dll in ('opengl32sw.dll', 'd3dcompiler_47.dll'))
+    if os.path.basename(x[0]).lower() not in BLOCKED_BINARIES
 ]
 pyz = PYZ(a.pure)
 
