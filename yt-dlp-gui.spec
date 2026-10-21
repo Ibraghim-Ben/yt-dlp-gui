@@ -1,5 +1,5 @@
 import os
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_submodules
 
 datas = [
     ('src/resources/themes', 'src/resources/themes'),
@@ -19,8 +19,7 @@ hiddenimports = [
     'websockets.legacy',
     'websockets.legacy.client',
 ]
-tmp_ret = collect_all('yt_dlp')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports += collect_submodules('yt_dlp')
 
 bin_dir = os.path.join('src', 'resources', 'bin')
 for exe in ('ffmpeg.exe', 'ffprobe.exe', 'qjs.exe', 'libwinpthread-1.dll'):
