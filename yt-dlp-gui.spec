@@ -18,11 +18,12 @@ hiddenimports = [
     'websockets',
     'websockets.legacy',
     'websockets.legacy.client',
+    'mutagen',
 ]
 hiddenimports += collect_submodules('yt_dlp')
 
 bin_dir = os.path.join('src', 'resources', 'bin')
-for exe in ('ffmpeg.exe', 'ffprobe.exe', 'qjs.exe', 'libwinpthread-1.dll'):
+for exe in ('ffmpeg.exe', 'qjs.exe', 'libwinpthread-1.dll'):
     exe_path = os.path.join(bin_dir, exe)
     if os.path.isfile(exe_path):
         binaries.append((exe_path, 'bin'))

@@ -12,6 +12,7 @@ dependencies = [
     "yt-dlp>=2026.6.9",
     "platformdirs>=4.0",
     "curl-cffi>=0.15.0",
+    "mutagen>=1.47.0",
 ]
 
 [project.optional-dependencies]

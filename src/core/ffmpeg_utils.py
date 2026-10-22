@@ -65,7 +65,7 @@ def find_quickjs() -> str:
 
 
 def setup_bundled_binaries() -> dict[str, str]:
-    """Ensures bundled external binaries (ffmpeg, ffprobe, quickjs) are on PATH and detectable."""
+    """Ensures bundled external binaries (ffmpeg, quickjs) are on PATH and detectable."""
     base_dir = os.path.dirname(os.path.dirname(__file__))
     candidates = [
         os.path.join(base_dir, "resources", "bin"),

@@ -476,9 +476,9 @@ class DownloadWorker(QThread):
             self.status_changed.emit(self._task.id, DownloadStatus.CANCELLED.name)
             self._cleanup_partial_files()
 
-    def _inspect_streams(self, path: str, probe_or_ffmpeg: str, ffmpeg_bin: str, cflags: int) -> tuple[bool, bool]:
+    def _inspect_streams(self, path: str, ffmpeg_bin: str, cflags: int) -> tuple[bool, bool]:
         import subprocess as _sp
-        cmd = [probe_or_ffmpeg, path] if probe_or_ffmpeg != ffmpeg_bin else [ffmpeg_bin, "-i", path]
+        cmd = [ffmpeg_bin, "-i", path]
         try:
             r = _sp.run(cmd, capture_output=True, text=True, timeout=10, creationflags=cflags)
             text = r.stderr or r.stdout
@@ -498,9 +498,6 @@ class DownloadWorker(QThread):
             return None
 
         cflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        probe_bin = os.path.join(os.path.dirname(ffmpeg_bin), "ffprobe.exe" if sys.platform == "win32" else "ffprobe")
-        if not os.path.isfile(probe_bin):
-            probe_bin = ""
 
         media_candidates: list[str] = []
         thumb_candidates: list[str] = []
@@ -535,7 +532,7 @@ class DownloadWorker(QThread):
             return None
 
         def inspect_streams(path: str) -> tuple[bool, bool]:
-            return self._inspect_streams(path, probe_bin or ffmpeg_bin, ffmpeg_bin, cflags)
+            return self._inspect_streams(path, ffmpeg_bin, cflags)
 
         video_files: list[str] = []
         audio_files: list[str] = []
