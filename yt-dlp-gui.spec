@@ -44,6 +44,7 @@ a = Analysis(
         "PyQt6.QtBluetooth", "PyQt6.QtNfc", "PyQt6.QtSql",
         "PyQt6.QtTest", "PyQt6.QtXml", "PyQt6.QtNetwork",
         "PyQt6.QtMultimedia", "PyQt6.QtWebEngine",
+        "tkinter", "unittest", "pydoc",
     ],
     noarchive=False,
     optimize=2,
@@ -66,6 +67,21 @@ BLOCKED_BINARIES = {
 a.binaries = [
     x for x in a.binaries
     if os.path.basename(x[0]).lower() not in BLOCKED_BINARIES
+]
+
+a.datas = [
+    x for x in a.datas
+    if not any(bad in x[0].lower() for bad in ('setuptools', 'dist-info', 'egg-info'))
+]
+
+a.pure = [
+    x for x in a.pure
+    if not any(x[0].startswith(pkg) for pkg in ('setuptools', 'pkg_resources', 'pip', '_distutils_hack', 'distutils'))
+]
+
+a.scripts = [
+    x for x in a.scripts
+    if 'setuptools' not in x[0].lower()
 ]
 pyz = PYZ(a.pure)
 
