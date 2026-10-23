@@ -55,6 +55,7 @@ BLOCKED_BINARIES = {
     'opengl32sw.dll',
     'd3dcompiler_47.dll',
     'qt6pdf.dll',
+    'qt6network.dll',
     'qpdf.dll',
     'qtiff.dll',
     'qicns.dll',
