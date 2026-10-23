@@ -1,4 +1,5 @@
 import os
+import glob
 from PyInstaller.utils.hooks import collect_submodules
 
 datas = [
@@ -69,9 +70,23 @@ a.binaries = [
     if os.path.basename(x[0]).lower() not in BLOCKED_BINARIES
 ]
 
+# Detect all languages supported by the project (from translation files)
+active_langs = {'ru', 'en'}
+for qm_path in glob.glob(os.path.join(SPECPATH, 'src', 'resources', 'translations', '*.qm')):
+    lang_name = os.path.basename(qm_path).replace('.qm', '').replace('qtbase_', '')
+    if lang_name:
+        active_langs.add(lang_name.lower())
+
+def is_unwanted_qt_translation(dest_path: str) -> bool:
+    low = dest_path.lower()
+    if 'translations' in low and 'pyqt6' in low:
+        return not any(f'_{lang}.' in low or f'_{lang}_' in low for lang in active_langs)
+    return False
+
 a.datas = [
     x for x in a.datas
     if not any(bad in x[0].lower() for bad in ('setuptools', 'dist-info', 'egg-info'))
+    and not is_unwanted_qt_translation(x[0])
 ]
 
 a.pure = [
