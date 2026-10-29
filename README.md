@@ -11,7 +11,7 @@ A graphical interface for yt-dlp - download videos from YouTube and 1000+ other 
 - Playlist support with entry selection;
 - Format selector with resolution, FPS, codec, size info;
 - Embed thumbnail, metadata, subtitles;
-- Dark and light themes
+- Dark and light themes;
 - Configurable output directory and filename template
 - Rate limiting and browser cookie support
 - Download queue persisted across restarts
